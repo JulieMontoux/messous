@@ -1,0 +1,66 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: messous
+      POSTGRES_USER: messous
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U messous"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 40s
+
+  # Pulls the model once on first start, exits 0 → no restart
+  ollama-init:
+    image: ollama/ollama
+    restart: on-failure
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["/bin/ollama", "pull", "llama3.1:8b"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  api:
+    build: ./api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://messous:${DB_PASSWORD}@db:5432/messous
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      PORT: 3001
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.1:8b
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+
+  frontend:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PORT:-80}:80"
+    depends_on:
+      - api
+
+volumes:
+  db_data:
+  ollama_data:
