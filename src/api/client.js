@@ -14,7 +14,11 @@ async function request(method, path, body) {
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Erreur réseau' }));
+    const err = await res.json().catch(() => ({
+      error: res.status >= 502 && res.status <= 504
+        ? `Serveur injoignable (${res.status}) — l'API ne répond pas`
+        : `Erreur serveur (${res.status})`,
+    }));
     if (res.status === 401) {
       localStorage.removeItem('messous_token');
       // Déclenche un événement pour que AuthContext réagisse sans boucle de reload

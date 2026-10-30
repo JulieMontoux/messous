@@ -45,7 +45,8 @@ router.post('/suggestions', async (req, res) => {
     const trendsRows = trendsRes.rows;
 
     const salary = Number(profile.net_salary) || 0;
-    const totalFixed = charges.reduce((s, c) => s + Number(c.amount), 0);
+    const perMonth = c => Number(c.amount) / ({ yearly: 12, quarterly: 3 }[c.frequency] || 1);
+    const totalFixed = Math.round(charges.reduce((s, c) => s + perMonth(c), 0));
     const totalEnv = envelopes.filter(e => e.type !== 'saving').reduce((s, e) => s + Number(e.budget_monthly), 0);
     const totalSaving = envelopes.filter(e => e.type === 'saving').reduce((s, e) => s + Number(e.budget_monthly), 0);
     const remainder = salary - totalFixed - totalEnv - totalSaving;
@@ -133,7 +134,7 @@ function buildPrompt(profile, charges, envelopes, spentByEnv, savingsHistory, tr
   const savingsRate = salary > 0 ? Math.round((totalSaving / salary) * 100) : 0;
 
   const chargeLines = charges.length
-    ? charges.map(c => `  - ${c.name}: ${Number(c.amount)}€`).join('\n')
+    ? charges.map(c => `  - ${c.name}: ${Number(c.amount)}€${c.frequency === 'yearly' ? ' par an' : c.frequency === 'quarterly' ? ' par trimestre' : ''}`).join('\n')
     : '  (aucune)';
 
   const envLines = envelopes.length

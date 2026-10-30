@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { weekStart, periodStart, periodEnd, mondayOf, lastWithdrawal, isLastDayOfMonth, addDays } from './period';
-import { spentInPeriod, envelopeForecast, realSpending } from './budget';
+import { spentInPeriod, envelopeForecast, realSpending, monthlyAmount, totalFixed, isDueInMonth } from './budget';
 
 // Jeudi 30 octobre 2026
 const NOW = new Date(2026, 9, 30, 12, 0);
@@ -94,5 +94,32 @@ describe('realSpending', () => {
       ],
     });
     expect(r).toEqual({ cash: 10, cardClassified: 25, unclassified: 12, total: 47 });
+  });
+});
+
+describe('charges fixes non mensuelles', () => {
+
+  it('équivalent mensuel', () => {
+    expect(monthlyAmount({ amount: 120, frequency: 'yearly' })).toBe(10);
+    expect(monthlyAmount({ amount: 90, frequency: 'quarterly' })).toBe(30);
+    expect(monthlyAmount({ amount: 50 })).toBe(50);
+    expect(totalFixed([{ amount: 700 }, { amount: 120, frequency: 'yearly' }])).toBe(710);
+  });
+
+  it("mois d'échéance", () => {
+    expect(isDueInMonth({ frequency: 'yearly', dueMonth: 10 }, 10)).toBe(true);
+    expect(isDueInMonth({ frequency: 'yearly', dueMonth: 10 }, 11)).toBe(false);
+    expect(isDueInMonth({ frequency: 'quarterly', dueMonth: 1 }, 10)).toBe(true);
+    expect(isDueInMonth({ frequency: 'quarterly', dueMonth: 1 }, 11)).toBe(false);
+  });
+});
+
+describe('realSpending ignore les paiements rattachés à une charge fixe', () => {
+  it('abonnement annuel classé en charge fixe', () => {
+    const r = realSpending({
+      since: '2026-10-01', envelopes: [], transactions: [],
+      bankTransactions: [{ date: '2026-10-05', amount: -99, isCard: true, envelopeId: null, fixedChargeId: 'f1', ignored: false }],
+    });
+    expect(r.total).toBe(0);
   });
 });

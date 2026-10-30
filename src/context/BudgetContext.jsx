@@ -49,6 +49,9 @@ function reducer(state, action) {
     case 'SET_BANK_TRANSACTIONS':
       return { ...state, bankTransactions: action.payload };
 
+    case 'SET_FIXED_CHARGES':
+      return { ...state, fixedCharges: action.payload };
+
     case 'SET_TRANSACTIONS':
       return { ...state, transactions: action.payload };
 
@@ -164,15 +167,22 @@ const BudgetContext = createContext(null);
 export function BudgetProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, defaultState);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
-  useEffect(() => {
+  // Si le chargement échoue, on ne bascule PAS sur l'état par défaut :
+  // il afficherait l'onboarding et pourrait écraser le profil existant.
+  const load = useCallback(() => {
+    setLoadError('');
+    setReady(false);
     fetchAll()
       .then(data => {
         dispatch({ type: 'LOAD_STATE', payload: data });
         setReady(true);
       })
-      .catch(() => setReady(true));
+      .catch(err => setLoadError(err.message || 'Serveur injoignable'));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const apiDispatch = useCallback((action) => {
     dispatch(action);
@@ -184,7 +194,7 @@ export function BudgetProvider({ children }) {
   }, []);
 
   return (
-    <BudgetContext.Provider value={{ state, dispatch: apiDispatch, ready }}>
+    <BudgetContext.Provider value={{ state, dispatch: apiDispatch, ready, loadError, reload: load }}>
       {children}
     </BudgetContext.Provider>
   );

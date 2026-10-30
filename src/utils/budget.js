@@ -15,16 +15,31 @@ export function fmtDec(amount) {
   }).format(amount || 0);
 }
 
+// Charges fixes : le montant est celui d'une échéance ; une charge annuelle pèse 1/12 par mois dans le budget
+export const FREQUENCY_MONTHS = { monthly: 1, quarterly: 3, yearly: 12 };
+
+export function monthlyAmount(charge) {
+  return (Number(charge.amount) || 0) / (FREQUENCY_MONTHS[charge.frequency] || 1);
+}
+
+// Une charge trimestrielle/annuelle tombe-t-elle ce mois-ci ?
+export function isDueInMonth(charge, month1to12) {
+  const freq = charge.frequency || 'monthly';
+  if (freq === 'monthly' || !charge.dueMonth) return true;
+  if (freq === 'yearly') return charge.dueMonth === month1to12;
+  return (month1to12 - charge.dueMonth + 12) % 3 === 0;
+}
+
 export function totalFixed(charges) {
-  return charges.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+  return charges.reduce((sum, c) => sum + monthlyAmount(c), 0);
 }
 
 export function totalFixedExSavings(charges) {
-  return charges.filter(c => c.categoryId !== 'savings').reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+  return charges.filter(c => c.categoryId !== 'savings').reduce((sum, c) => sum + monthlyAmount(c), 0);
 }
 
 export function totalProgrammedSavings(charges) {
-  return charges.filter(c => c.categoryId === 'savings').reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+  return charges.filter(c => c.categoryId === 'savings').reduce((sum, c) => sum + monthlyAmount(c), 0);
 }
 
 export function totalVariableEnvelopes(envelopes) {
@@ -138,9 +153,15 @@ export function realSpending({ transactions, envelopes, bankTransactions = [], s
   const cash = tx.filter(t => (t.paymentMethod || 'cash') === 'cash').reduce((s, t) => s + Number(t.amount), 0);
   const cardClassified = tx.filter(t => t.paymentMethod === 'card').reduce((s, t) => s + Number(t.amount), 0);
   const unclassified = bankTransactions
-    .filter(b => b.date >= since && b.amount < 0 && b.isCard && !b.ignored && !b.envelopeId)
+    .filter(b => b.date >= since && b.amount < 0 && b.isCard && !b.ignored && !b.envelopeId && !b.fixedChargeId)
     .reduce((s, b) => s + Math.abs(b.amount), 0);
   return { cash, cardClassified, unclassified, total: cash + cardClassified + unclassified };
+}
+
+// Opération bancaire à classer : paiement carte ou prélèvement, ni classé ni ignoré
+export function isBankTodo(b) {
+  return b.amount < 0 && !b.ignored && !b.envelopeId && !b.fixedChargeId
+    && (b.isCard || /PRLV|PRELEV/i.test(b.label || ''));
 }
 
 export function isCurrentMonth(month, now = new Date()) {
@@ -178,4 +199,11 @@ export function donutData(salary, charges, envelopes) {
 export function realSavings(snap) {
   if (!snap?.closedAt) return null;
   return (snap.actualSavings || 0) + (snap.remainderToGoalId ? (snap.actualRemainder || 0) : 0);
+}
+
+// Normalise le formulaire en charge à enregistrer
+export function chargeFromForm(form) {
+  const raw = Number(form.amount);
+  if (form.frequency === 'weekly') return { ...form, frequency: 'monthly', dueMonth: null, amount: weeklyToMonthly(raw) };
+  return { ...form, amount: raw, dueMonth: form.frequency === 'monthly' ? null : Number(form.dueMonth) };
 }

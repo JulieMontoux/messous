@@ -140,7 +140,8 @@ function MigrationScreen({ onDone }) {
 }
 
 function BudgetApp() {
-  const { state, dispatch, ready } = useBudget();
+  const { state, dispatch, ready, loadError, reload } = useBudget();
+  const { logout } = useAuth();
   const [params, setParams] = useState(readUrlParams);
   const [page, setPageState] = useState(() => (PAGES[params.page] ? params.page : 'dashboard'));
 
@@ -174,6 +175,21 @@ function BudgetApp() {
       },
     });
   }, [ready, profile.netSalary, profile.onboardingDone, fixedCharges, envelopes]);
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+        <div className="card w-full max-w-sm text-center space-y-3">
+          <p className="text-4xl">🔌</p>
+          <p className="font-semibold text-slate-800">Impossible de charger tes données</p>
+          <p className="text-sm text-slate-500">Le serveur ne répond pas pour le moment. Tes données ne sont pas perdues.</p>
+          <p className="text-xs text-slate-400">{loadError}</p>
+          <button className="btn-primary w-full" onClick={reload}>Réessayer</button>
+          <button className="btn-secondary w-full" onClick={logout}>Se déconnecter</button>
+        </div>
+      </div>
+    );
+  }
 
   if (!ready) {
     return (

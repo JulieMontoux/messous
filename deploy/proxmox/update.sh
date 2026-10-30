@@ -4,6 +4,13 @@
 # Lancé toutes les 2 minutes par messous-update.timer (voir install.sh).
 set -euo pipefail
 
+# Conteneurs LXC : locale souvent absente, et TMPDIR parfois défini (pam_tmpdir) vers un dossier
+# inexistant, ce qui fait échouer `docker compose build` (« invalid output path »)
+export LC_ALL=C.UTF-8
+if [ -n "${TMPDIR:-}" ] && ! mkdir -p "$TMPDIR" 2>/dev/null; then
+  export TMPDIR=/tmp
+fi
+
 APP_DIR="${APP_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 BRANCH="${BRANCH:-$(git -C "$APP_DIR" rev-parse --abbrev-ref HEAD)}"
 FORCE="${1:-}"
