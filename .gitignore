@@ -26,3 +26,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Clés privées (connecteur bancaire)
+secrets/*
+!secrets/.gitkeep

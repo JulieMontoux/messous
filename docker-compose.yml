@@ -45,8 +45,24 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       PORT: 3001
+      TZ: ${TZ:-Europe/Paris}
+      APP_URL: ${APP_URL:-http://localhost}
       OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: llama3.1:8b
+      # E-mails (alertes, rappel de fin de mois)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      MONTH_END_HOUR: ${MONTH_END_HOUR:-18}
+      # Connecteur bancaire Enable Banking (optionnel)
+      ENABLE_BANKING_APP_ID: ${ENABLE_BANKING_APP_ID:-}
+      ENABLE_BANKING_KEY_PATH: ${ENABLE_BANKING_KEY_PATH:-/run/secrets/enablebanking.pem}
+      BANK_SYNC_INTERVAL_HOURS: ${BANK_SYNC_INTERVAL_HOURS:-6}
+    volumes:
+      - ./secrets:/run/secrets:ro
     depends_on:
       db:
         condition: service_healthy
@@ -54,7 +70,10 @@ services:
         condition: service_healthy
 
   frontend:
-    build: .
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
     restart: unless-stopped
     ports:
       - "${PORT:-80}:80"
