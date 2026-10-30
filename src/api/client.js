@@ -60,10 +60,9 @@ export const DEFAULT_PROFILE = {
   mailConfigured: false,
 };
 
+// Opérations bancaires depuis le 1er du mois dernier (période par défaut côté API)
 export async function fetchBankTransactions() {
-  const from = new Date();
-  from.setDate(from.getDate() - 62);
-  return api.get(`/api/bank/transactions?from=${from.toISOString().slice(0, 10)}`).catch(() => []);
+  return api.get('/api/bank/transactions').catch(() => []);
 }
 
 export async function fetchAll() {

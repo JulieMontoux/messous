@@ -7,6 +7,7 @@ const { parseBankCsv } = require('../lib/bank/csv');
 const { merchantKey } = require('../lib/bank/common');
 const { storeTransactions, assignBankTransaction, assignToFixedCharge, syncUser, syncConnection } = require('../lib/bank/sync');
 const { appUrl } = require('../lib/mailer');
+const { bankHistoryStart } = require('../lib/dates');
 
 const txToClient = r => ({
   id: r.id,
@@ -121,20 +122,23 @@ router.post('/sync', async (req, res) => {
 router.post('/import', async (req, res) => {
   try {
     const { csv, accountName = 'Import CSV' } = req.body;
-    const txs = parseBankCsv(csv);
+    // Seulement les opérations depuis le 1er du mois dernier
+    const all = parseBankCsv(csv);
+    const from = bankHistoryStart();
+    const txs = all.filter(t => t.bookingDate >= from);
     const { rows: [acc] } = await pool.query(
       `INSERT INTO bank_accounts (user_id, external_uid, name) VALUES ($1, $2, $3)
        ON CONFLICT (user_id, external_uid) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
       [req.user.userId, `csv:${accountName}`, accountName]
     );
     const r = await storeTransactions(req.user.userId, acc.id, txs);
-    res.json({ parsed: txs.length, ...r });
+    res.json({ parsed: all.length, skipped: all.length - txs.length, from, ...r });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
 router.get('/transactions', async (req, res) => {
   try {
-    const from = req.query.from || new Date(Date.now() - 62 * 86400000).toISOString().slice(0, 10);
+    const from = req.query.from || bankHistoryStart();
     const { rows } = await pool.query(
       'SELECT * FROM bank_transactions WHERE user_id = $1 AND booking_date >= $2 ORDER BY booking_date DESC, created_at DESC',
       [req.user.userId, from]
@@ -174,6 +178,51 @@ router.post('/transactions/:id/assign', async (req, res) => {
         date: tx.date, paymentMethod: tx.payment_method, bankTransactionId: tx.bank_transaction_id,
       },
     });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// Classement en masse : { ids, envelopeId | fixedChargeId | ignore, remember }
+router.post('/transactions/bulk', async (req, res) => {
+  try {
+    const { ids = [], envelopeId = null, fixedChargeId = null, ignore = false, remember = false } = req.body;
+    const userId = req.user.userId;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Aucune opération sélectionnée' });
+    if (!ignore && !envelopeId && !fixedChargeId) return res.status(400).json({ error: 'Destination requise' });
+    if (fixedChargeId) {
+      const { rows } = await pool.query('SELECT id FROM fixed_charges WHERE id = $1 AND user_id = $2', [fixedChargeId, userId]);
+      if (!rows.length) return res.status(400).json({ error: 'Charge fixe introuvable' });
+    } else if (envelopeId) {
+      const { rows } = await pool.query('SELECT id FROM envelopes WHERE id = $1 AND user_id = $2', [envelopeId, userId]);
+      if (!rows.length) return res.status(400).json({ error: 'Enveloppe introuvable' });
+    }
+    const { rows: btxs } = await pool.query(
+      'SELECT id, label, transaction_id FROM bank_transactions WHERE user_id = $1 AND id = ANY($2::uuid[]) AND amount < 0',
+      [userId, ids]
+    );
+    for (const b of btxs) {
+      if (ignore) {
+        if (b.transaction_id) await pool.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [b.transaction_id, userId]);
+        await pool.query(
+          'UPDATE bank_transactions SET ignored = true, envelope_id = NULL, fixed_charge_id = NULL, transaction_id = NULL WHERE id = $1',
+          [b.id]
+        );
+      } else if (fixedChargeId) {
+        await assignToFixedCharge(userId, b.id, fixedChargeId);
+      } else {
+        await assignBankTransaction(userId, b.id, envelopeId);
+      }
+    }
+    if (remember && !ignore) {
+      const patterns = [...new Set(btxs.map(b => merchantKey(b.label)).filter(Boolean))];
+      for (const pattern of patterns) {
+        await pool.query(
+          `INSERT INTO bank_rules (user_id, pattern, envelope_id, fixed_charge_id) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (user_id, pattern) DO UPDATE SET envelope_id = EXCLUDED.envelope_id, fixed_charge_id = EXCLUDED.fixed_charge_id`,
+          [userId, pattern, fixedChargeId ? null : envelopeId, fixedChargeId]
+        );
+      }
+    }
+    res.json({ updated: btxs.length });
   } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 

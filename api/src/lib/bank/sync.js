@@ -2,7 +2,7 @@ const { pool } = require('../../db');
 const eb = require('./enablebanking');
 const { merchantKey } = require('./common');
 const { checkEnvelopeAlert } = require('../alerts');
-const { localDate } = require('../dates');
+const { localDate, bankHistoryStart } = require('../dates');
 
 // Insère les opérations (dédoublonnées), puis applique les règles d'affectation automatique
 async function storeTransactions(userId, accountId, txs) {
@@ -90,13 +90,15 @@ async function syncConnection(conn) {
     return { inserted: 0, assigned: 0 };
   }
   const { rows: accounts } = await pool.query('SELECT * FROM bank_accounts WHERE connection_id = $1', [conn.id]);
+  // 1re synchro : depuis le 1er du mois dernier ; ensuite les 10 derniers jours (sans remonter avant)
   const since = new Date();
-  since.setDate(since.getDate() - (conn.last_sync_at ? 10 : 90));
+  since.setDate(since.getDate() - 10);
+  const sinceStr = conn.last_sync_at && localDate(since) > bankHistoryStart() ? localDate(since) : bankHistoryStart();
   let inserted = 0;
   let assigned = 0;
   try {
     for (const acc of accounts) {
-      const txs = await eb.fetchTransactions(acc.external_uid, localDate(since));
+      const txs = await eb.fetchTransactions(acc.external_uid, sinceStr);
       const r = await storeTransactions(conn.user_id, acc.id, txs);
       inserted += r.inserted;
       assigned += r.assigned;
