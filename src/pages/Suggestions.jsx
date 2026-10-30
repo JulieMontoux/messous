@@ -3,12 +3,79 @@ import { ExternalLink, RefreshCw, Wifi, WifiOff, Sparkles, AlertCircle } from 'l
 import { useBudget } from '../context/BudgetContext';
 import {
   TOBACCO_PRICES, FUEL_PRICES, FUEL_TIPS, GROCERY_BRANDS, GROCERY_TIPS, SAVINGS_TIPS,
-  tobaccoMonthlyCost, tobaccoYearlyCost,
 } from '../data/staticPrices';
 import { fmt, fmtDec } from '../utils/budget';
 import { fetchFuelPrices } from '../utils/fuelApi';
-import { SUPERMARKETS, getSupermarket, adjustGroceryBudget } from '../data/supermarkets';
+import { SUPERMARKETS, getSupermarket } from '../data/supermarkets';
 import { api } from '../api/client';
+import { getTobaccoType, tobaccoMonthlyBudget } from '../data/defaults';
+import PageHeader from '../components/PageHeader';
+
+// Tabac : coût réel selon le profil (type + prix modifiable) et pistes d'économie
+function TobaccoSection({ profile, navigate }) {
+  const type = getTobaccoType(profile.tobaccoType);
+  const price = Number(profile.tobaccoPackPrice) || type.defaultPrice;
+  const perWeek = Number(profile.tobaccoPacksPerWeek) || 0;
+  const monthly = tobaccoMonthlyBudget(profile);
+  const yearly = Math.round(price * perWeek * 52);
+  const cheapest = [...TOBACCO_PRICES].sort((a, b) => a.price - b.price)[0];
+  const indusSaving = type.id === 'indus' && price > cheapest.price
+    ? Math.round((price - cheapest.price) * perWeek * 52 / 12)
+    : 0;
+  const lessOne = perWeek > 0 ? Math.round(price * Math.min(1, perWeek) * 52 / 12) : 0;
+
+  return (
+    <Section title="Tabac" emoji="🚬">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm text-slate-600">
+          {type.icon} {type.label} · <strong>{fmtDec(price)}</strong> / {type.unit} · {perWeek} / semaine
+        </p>
+        <button onClick={() => navigate?.('settings')} className="text-xs text-primary font-medium">Modifier</button>
+      </div>
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="rounded-xl bg-warn/5 border border-warn/20 p-3 text-center">
+          <p className="text-lg font-bold text-warn">{fmt(monthly)}</p>
+          <p className="text-xs text-slate-400">/ mois</p>
+        </div>
+        <div className="rounded-xl bg-danger/5 border border-danger/20 p-3 text-center">
+          <p className="text-lg font-bold text-danger">{fmt(yearly)}</p>
+          <p className="text-xs text-slate-400">/ an</p>
+        </div>
+      </div>
+      <ul className="space-y-1.5 text-sm text-slate-600 mb-3">
+        {indusSaving > 0 && (
+          <li>💚 Passer à <strong>{cheapest.brand}</strong> ({fmtDec(cheapest.price)}) : <strong className="text-savings">−{fmt(indusSaving)} / mois</strong></li>
+        )}
+        {type.id === 'indus' && (
+          <li>🌿 Le tabac à rouler ou à tuber revient en général 30 à 50 % moins cher par cigarette.</li>
+        )}
+        {type.id !== 'indus' && (
+          <li>👍 Bon choix côté budget : {type.short.toLowerCase()} revient moins cher que les cigarettes industrielles.</li>
+        )}
+        {lessOne > 0 && (
+          <li>📉 Un {type.unit} de moins par semaine = <strong className="text-savings">−{fmt(lessOne)} / mois</strong></li>
+        )}
+        <li>🔔 Active l'alerte e-mail dans ton profil pour être prévenu(e) quand le budget tabac est épuisé.</li>
+      </ul>
+      {type.id === 'indus' && (
+        <div className="space-y-2">
+          {TOBACCO_PRICES.map(({ brand, price: p, tip }) => (
+            <div key={brand} className="flex items-center justify-between py-1.5 border-b border-slate-50 last:border-0">
+              <div>
+                <p className="text-sm font-medium text-slate-700">{brand}</p>
+                {tip && <p className="text-xs text-slate-400">{tip}</p>}
+              </div>
+              <div className="text-right">
+                <p className="font-bold text-slate-800">{fmtDec(p)}</p>
+                <p className="text-xs text-slate-400">/paquet</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+}
 
 function Section({ title, emoji, children }) {
   const [open, setOpen] = useState(true);
@@ -212,7 +279,7 @@ function AiSection() {
   );
 }
 
-export default function Suggestions() {
+export default function Suggestions({ navigate }) {
   const { state } = useBudget();
   const { profile } = state;
 
@@ -234,27 +301,19 @@ export default function Suggestions() {
 
   useEffect(() => { loadGasPrices(); }, []);
 
-  const packsPerDay = 1;
-  const cheapestTobacco = [...TOBACCO_PRICES].sort((a, b) => a.price - b.price)[0];
-  const expensiveTobacco = [...TOBACCO_PRICES].sort((a, b) => b.price - a.price)[0];
-  const monthlySaving = tobaccoMonthlyCost(packsPerDay, expensiveTobacco.price) - tobaccoMonthlyCost(packsPerDay, cheapestTobacco.price);
-  const yearlySaving = tobaccoYearlyCost(packsPerDay, expensiveTobacco.price) - tobaccoYearlyCost(packsPerDay, cheapestTobacco.price);
-
   // Use live prices if available, fall back to static
   const displayPrices = gasData?.prices || Object.fromEntries(
     Object.entries(FUEL_PRICES).map(([k, v]) => [k, v.price])
   );
 
   return (
-    <div className="px-4 pt-6 pb-4 space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Astuces & Prix</h1>
-        <p className="text-sm text-slate-400 mt-0.5">
-          {gasData?.source === 'live' ? `Données en direct — ${gasData.date}` :
-           gasData?.source === 'cache' ? `Cache — ${gasData.date}` :
-           gasLoading ? 'Chargement des prix…' : 'Données statiques (API indisponible)'}
-        </p>
-      </div>
+    <div className="pt-6 pb-4 space-y-4">
+      <PageHeader
+        title="Astuces & Prix"
+        subtitle={gasData?.source === 'live' ? `Données en direct — ${gasData.date}` :
+          gasData?.source === 'cache' ? `Cache — ${gasData.date}` :
+          gasLoading ? 'Chargement des prix…' : 'Données statiques (API indisponible)'}
+      />
 
       <AiSection />
 
@@ -331,40 +390,7 @@ export default function Suggestions() {
       </Section>
 
       {/* Tabac */}
-      {profile.isSmoker && (
-        <Section title="Tabac" emoji="🚬">
-          <div className="card bg-warn/5 border-warn/20 mb-3">
-            <p className="text-xs text-slate-500 mb-1">Économie possible avec marque moins chère (1 paquet/jour)</p>
-            <div className="flex gap-4">
-              <div className="text-center">
-                <p className="text-lg font-bold text-warn">{fmtDec(monthlySaving)}</p>
-                <p className="text-xs text-slate-400">/ mois</p>
-              </div>
-              <div className="text-center">
-                <p className="text-lg font-bold text-savings">{fmt(yearlySaving)}</p>
-                <p className="text-xs text-slate-400">/ an</p>
-              </div>
-              <div className="flex-1 text-xs text-slate-500 self-center">
-                Passer de <strong>{expensiveTobacco.brand}</strong> à <strong>{cheapestTobacco.brand}</strong>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-2">
-            {TOBACCO_PRICES.map(({ brand, price, tip }) => (
-              <div key={brand} className="flex items-center justify-between py-1.5 border-b border-slate-50 last:border-0">
-                <div>
-                  <p className="text-sm font-medium text-slate-700">{brand}</p>
-                  {tip && <p className="text-xs text-slate-400">{tip}</p>}
-                </div>
-                <div className="text-right">
-                  <p className="font-bold text-slate-800">{fmtDec(price)}</p>
-                  <p className="text-xs text-slate-400">/paquet</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
-      )}
+      {profile.isSmoker && <TobaccoSection profile={profile} navigate={navigate} />}
 
       {/* Courses */}
       <Section title="Courses alimentaires" emoji="🛒">

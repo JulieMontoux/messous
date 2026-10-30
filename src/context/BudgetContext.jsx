@@ -1,24 +1,14 @@
 import { createContext, useContext, useReducer, useEffect, useState, useCallback } from 'react';
-import { api, fetchAll } from '../api/client';
+import { api, fetchAll, DEFAULT_PROFILE } from '../api/client';
 
 const defaultState = {
-  profile: {
-    firstName: '',
-    netSalary: 0,
-    hasCar: true,
-    isSmoker: false,
-    householdAdults: 1,
-    householdChildren: 0,
-    pets: { dogs: 0, cats: 0, other: 0 },
-    region: 'Île-de-France',
-    supermarket: 'leclerc',
-    onboardingDone: false,
-    registrationDate: null,
-  },
+  profile: { ...DEFAULT_PROFILE },
   fixedCharges: [],
   envelopes: [],
   transactions: [],
   savingsHistory: [],
+  withdrawals: [],
+  bankTransactions: [],
   settings: { viewMode: 'monthly' },
 };
 
@@ -33,16 +23,34 @@ function reducer(state, action) {
     case 'COMPLETE_ONBOARDING':
       return {
         ...state,
-        profile: { ...action.payload.profile, onboardingDone: true, registrationDate: new Date().toISOString() },
+        profile: { ...state.profile, ...action.payload.profile, onboardingDone: true, registrationDate: new Date().toISOString() },
         fixedCharges: action.payload.fixedCharges,
         envelopes: action.payload.envelopes,
       };
 
-    case 'UPSERT_MONTH_SNAPSHOT': {
+    case 'UPSERT_MONTH_SNAPSHOT':
+    case 'CLOSE_MONTH': {
       const snap = action.payload;
+      const prev = state.savingsHistory.find(s => s.month === snap.month);
       const existing = state.savingsHistory.filter(s => s.month !== snap.month);
-      return { ...state, savingsHistory: [...existing, snap].sort((a, b) => a.month.localeCompare(b.month)) };
+      const merged = action.type === 'CLOSE_MONTH'
+        ? { ...prev, ...snap, month: snap.month, closedAt: new Date().toISOString() }
+        : { ...prev, ...snap };
+      return { ...state, savingsHistory: [...existing, merged].sort((a, b) => a.month.localeCompare(b.month)) };
     }
+
+    case 'ADD_WITHDRAWAL':
+      return { ...state, withdrawals: [action.payload, ...state.withdrawals].sort((a, b) => b.date.localeCompare(a.date)) };
+
+    case 'DELETE_WITHDRAWAL':
+      return { ...state, withdrawals: state.withdrawals.filter(w => w.id !== action.payload) };
+
+    // Actions locales (la synchronisation est faite par l'appelant)
+    case 'SET_BANK_TRANSACTIONS':
+      return { ...state, bankTransactions: action.payload };
+
+    case 'SET_TRANSACTIONS':
+      return { ...state, transactions: action.payload };
 
     case 'ADD_FIXED_CHARGE':
       return { ...state, fixedCharges: [...state.fixedCharges, action.payload] };
@@ -70,7 +78,12 @@ function reducer(state, action) {
       return { ...state, transactions: [...state.transactions, action.payload] };
 
     case 'DELETE_TRANSACTION':
-      return { ...state, transactions: state.transactions.filter(t => t.id !== action.payload) };
+      return {
+        ...state,
+        transactions: state.transactions.filter(t => t.id !== action.payload),
+        bankTransactions: state.bankTransactions.map(b => b.transactionId === action.payload
+          ? { ...b, transactionId: null, envelopeId: null } : b),
+      };
 
     case 'SET_VIEW_MODE':
       return { ...state, settings: { ...state.settings, viewMode: action.payload } };
@@ -84,19 +97,8 @@ function reducer(state, action) {
 }
 
 function toApiProfile(p) {
-  return {
-    firstName: p.firstName,
-    netSalary: p.netSalary,
-    hasCar: p.hasCar,
-    isSmoker: p.isSmoker,
-    householdAdults: p.householdAdults,
-    householdChildren: p.householdChildren,
-    pets: p.pets,
-    region: p.region,
-    supermarket: p.supermarket,
-    registrationDate: p.registrationDate,
-    onboardingDone: p.onboardingDone,
-  };
+  const { accountEmail: _a, mailConfigured: _m, ...rest } = p;
+  return rest;
 }
 
 async function syncToApi(action) {
@@ -139,6 +141,15 @@ async function syncToApi(action) {
 
     case 'UPSERT_MONTH_SNAPSHOT':
       return api.put(`/api/savings/${action.payload.month}`, action.payload);
+
+    case 'CLOSE_MONTH':
+      return api.put(`/api/savings/${action.payload.month}/close`, action.payload);
+
+    case 'ADD_WITHDRAWAL':
+      return api.post('/api/withdrawals', action.payload);
+
+    case 'DELETE_WITHDRAWAL':
+      return api.delete(`/api/withdrawals/${action.payload}`);
 
     case 'SET_VIEW_MODE':
       return api.put('/api/settings', { viewMode: action.payload });

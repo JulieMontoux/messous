@@ -1,7 +1,75 @@
+import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { PiggyBank, TrendingUp, Calendar, Award, ArrowUpRight } from 'lucide-react';
+import { PiggyBank, TrendingUp, Award, ArrowUpRight, CheckCircle2, ClipboardCheck } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
-import { fmt } from '../utils/budget';
+import { fmt, realSavings } from '../utils/budget';
+import { api } from '../api/client';
+import Modal from '../components/Modal';
+import PageHeader from '../components/PageHeader';
+
+function CloseMonthModal({ snap, onSave, onClose }) {
+  const planned = (snap.programmedSavings || 0) + (snap.savingEnvelopes || 0);
+  const [form, setForm] = useState({
+    actualSavings: snap.actualSavings ?? planned,
+    actualRemainder: snap.actualRemainder ?? Math.max(0, snap.remainder || 0),
+    remainderToGoalId: snap.remainderToGoalId || '',
+  });
+  const [goals, setGoals] = useState([]);
+
+  useEffect(() => { api.get('/api/goals').then(setGoals).catch(() => {}); }, []);
+
+  const total = (Number(form.actualSavings) || 0) + (form.remainderToGoalId ? Number(form.actualRemainder) || 0 : 0);
+
+  return (
+    <Modal
+      title={`Clôturer ${formatMonthLong(snap.month)}`}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>Annuler</button>
+          <button
+            className="btn-primary"
+            onClick={() => onSave({
+              month: snap.month,
+              actualSavings: Number(form.actualSavings) || 0,
+              actualRemainder: Number(form.actualRemainder) || 0,
+              remainderToGoalId: form.remainderToGoalId || null,
+            })}
+          >Enregistrer</button>
+        </>
+      }
+    >
+      <p className="text-xs text-slate-500">
+        Note ce qui s'est <strong>réellement</strong> passé ce mois-ci : l'historique comparera au prévu.
+      </p>
+      <div>
+        <label className="label">Épargne réellement versée</label>
+        <input className="input text-lg font-semibold" type="number" min="0" value={form.actualSavings}
+          onChange={e => setForm(f => ({ ...f, actualSavings: e.target.value }))} />
+        <p className="text-xs text-slate-400 mt-1">Prévu : {fmt(planned)} (virements programmés + enveloppes épargne)</p>
+      </div>
+      <div>
+        <label className="label">Reste en fin de mois</label>
+        <input className="input text-lg font-semibold" type="number" value={form.actualRemainder}
+          onChange={e => setForm(f => ({ ...f, actualRemainder: e.target.value }))} />
+        <p className="text-xs text-slate-400 mt-1">Ce qu'il reste réellement sur le compte · prévu : {fmt(Math.max(0, snap.remainder || 0))}</p>
+      </div>
+      {goals.length > 0 && Number(form.actualRemainder) > 0 && (
+        <div>
+          <label className="label">Que faire du reste ?</label>
+          <select className="input" value={form.remainderToGoalId} onChange={e => setForm(f => ({ ...f, remainderToGoalId: e.target.value }))}>
+            <option value="">Le garder sur le compte</option>
+            {goals.map(g => <option key={g.id} value={g.id}>Le verser sur {g.icon} {g.name}</option>)}
+          </select>
+        </div>
+      )}
+      <div className="bg-savings/5 rounded-xl p-3 flex justify-between items-center">
+        <span className="text-sm text-slate-600">Épargne réelle du mois</span>
+        <span className="text-xl font-bold text-savings">{fmt(total)}</span>
+      </div>
+    </Modal>
+  );
+}
 
 const MONTH_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 
@@ -52,9 +120,10 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-export default function History() {
-  const { state } = useBudget();
+export default function History({ params = {} }) {
+  const { state, dispatch } = useBudget();
   const { savingsHistory, profile, transactions, envelopes } = state;
+  const [closing, setClosing] = useState(() => params.close || null);
 
   const savingEnvIds = new Set(envelopes.filter(e => e.type === 'saving').map(e => e.id));
 
@@ -66,37 +135,42 @@ export default function History() {
     actualByMonth[month] = (actualByMonth[month] || 0) + Number(t.amount || 0);
   });
 
-  const history = savingsHistory.filter(s => s.totalSavings > 0 || s.programmedSavings > 0 || s.savingEnvelopes > 0);
+  const cm = currentMonth();
+  const history = savingsHistory.filter(s => s.totalSavings > 0 || s.programmedSavings > 0 || s.savingEnvelopes > 0 || s.closedAt);
 
+  // Le mois en cours n'est pas terminé : il n'entre ni dans la moyenne ni dans le « meilleur mois »
+  const finished = history.filter(s => s.month < cm);
+  const closed = history.filter(s => s.closedAt);
+  // Pour un mois clôturé on retient le réel, sinon le prévu
+  const valueOf = s => realSavings(s) ?? s.totalSavings;
   const totalPlanned = history.reduce((s, m) => s + m.totalSavings, 0);
-  const totalActual = Object.values(actualByMonth).reduce((s, v) => s + v, 0);
-  const avgMonthly = history.length > 0 ? Math.round(totalPlanned / history.length) : 0;
-  const bestMonth = history.length > 0
-    ? history.reduce((best, m) => m.totalSavings > best.totalSavings ? m : best, history[0])
+  const totalReal = closed.reduce((s, m) => s + realSavings(m), 0);
+  const avgMonthly = finished.length > 0 ? Math.round(finished.reduce((s, m) => s + valueOf(m), 0) / finished.length) : 0;
+  const bestMonth = finished.length > 0
+    ? finished.reduce((best, m) => valueOf(m) > valueOf(best) ? m : best, finished[0])
     : null;
+  const closingSnap = closing ? (savingsHistory.find(s => s.month === closing) || { month: closing }) : null;
 
   const regDate = profile.registrationDate
     ? new Date(profile.registrationDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
     : null;
-
-  const hasActual = totalActual > 0;
-  const cm = currentMonth();
 
   const chartData = history.map(snap => ({
     name: formatMonth(snap.month),
     'Prog. fixes': snap.programmedSavings || 0,
     'Env. épargne': snap.savingEnvelopes || 0,
     'Reste': snap.remainder || 0,
+    'Réel': realSavings(snap) ?? 0,
   }));
+  const currentSnap = history.find(s => s.month === cm);
 
   return (
-    <div className="px-4 pt-6 pb-4 space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Historique</h1>
-        <p className="text-sm text-slate-400 mt-0.5">
-          {regDate ? `Depuis ${regDate}` : 'Épargne mensuelle cumulée'}
-        </p>
-      </div>
+    <div className="pt-6 pb-4 space-y-4">
+      <PageHeader title="Historique" subtitle={regDate ? `Depuis ${regDate}` : 'Épargne mensuelle cumulée'}>
+        <button onClick={() => setClosing(cm)} className="btn-secondary flex items-center gap-1.5 py-2 text-sm">
+          <ClipboardCheck size={15} /> {currentSnap?.closedAt ? 'Modifier la clôture' : 'Clôturer le mois'}
+        </button>
+      </PageHeader>
 
       {history.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
@@ -114,33 +188,24 @@ export default function History() {
               value={fmt(totalPlanned)}
               sub={`sur ${history.length} mois`}
             />
-            {hasActual ? (
-              <StatCard
-                icon={ArrowUpRight}
-                label="Réellement viré"
-                value={fmt(totalActual)}
-                sub="env. épargne"
-                color="text-emerald-600"
-              />
-            ) : (
-              <StatCard
-                icon={TrendingUp}
-                label="Moyenne / mois"
-                value={fmt(avgMonthly)}
-                color="text-primary"
-              />
-            )}
             <StatCard
-              icon={Calendar}
-              label="Mois enregistrés"
-              value={history.length}
-              sub="mois"
-              color="text-slate-600"
+              icon={ArrowUpRight}
+              label="Réellement épargné"
+              value={closed.length ? fmt(totalReal) : '—'}
+              sub={closed.length ? `${closed.length} mois clôturé${closed.length > 1 ? 's' : ''}` : 'clôture tes mois'}
+              color="text-emerald-600"
+            />
+            <StatCard
+              icon={TrendingUp}
+              label="Moyenne / mois"
+              value={finished.length ? fmt(avgMonthly) : '—'}
+              sub={finished.length ? 'mois terminés' : 'dès le mois prochain'}
+              color="text-primary"
             />
             <StatCard
               icon={Award}
               label="Meilleur mois"
-              value={bestMonth ? fmt(bestMonth.totalSavings) : '—'}
+              value={bestMonth ? fmt(valueOf(bestMonth)) : '—'}
               sub={bestMonth ? formatMonthLong(bestMonth.month) : ''}
               color="text-warn"
             />
@@ -149,7 +214,7 @@ export default function History() {
           {/* Bar chart */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card">
-            <p className="text-sm font-semibold text-slate-700 mb-4">Épargne planifiée par mois</p>
+            <p className="text-sm font-semibold text-slate-700 mb-4">Épargne prévue vs réelle</p>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                 <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
@@ -159,6 +224,7 @@ export default function History() {
                 <Bar dataKey="Prog. fixes" stackId="a" fill="#059669" radius={[0, 0, 0, 0]} />
                 <Bar dataKey="Env. épargne" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
                 <Bar dataKey="Reste" stackId="a" fill="#6ee7b7" radius={[4, 4, 0, 0]} />
+                {closed.length > 0 && <Bar dataKey="Réel" fill="#6366f1" radius={[4, 4, 0, 0]} />}
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -170,16 +236,23 @@ export default function History() {
               {[...history].reverse().map((snap, i) => {
                 const isCurrentMonth = snap.month === cm;
                 const actualTransferred = actualByMonth[snap.month] || 0;
+                const real = realSavings(snap);
                 return (
                   <div key={snap.month} className={`py-3 ${i > 0 ? 'border-t border-slate-50' : ''}`}>
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-slate-700 text-sm">{formatMonthLong(snap.month)}</p>
-                        {isCurrentMonth && (
-                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">en cours</span>
+                        {isCurrentMonth && !snap.closedAt && (
+                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">en cours · prévisionnel</span>
+                        )}
+                        {snap.closedAt && (
+                          <span className="text-[10px] bg-savings/10 text-savings px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5"><CheckCircle2 size={10} /> clôturé</span>
                         )}
                       </div>
-                      <p className="font-bold text-savings">{fmt(snap.totalSavings)}</p>
+                      <div className="text-right">
+                        <p className="font-bold text-savings">{fmt(real ?? snap.totalSavings)}</p>
+                        {real != null && <p className="text-[10px] text-slate-400">prévu {fmt(snap.totalSavings)}</p>}
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-400">
                       <span>Salaire <strong className="text-slate-600">{fmt(snap.salary)}</strong></span>
@@ -206,7 +279,22 @@ export default function History() {
                         </span>
                       )}
                     </div>
-                    {actualTransferred > 0 && (
+                    {snap.closedAt && (
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
+                        <span>Versé <strong className="text-slate-700">{fmt(snap.actualSavings || 0)}</strong></span>
+                        <span>Reste réel <strong className="text-slate-700">{fmt(snap.actualRemainder || 0)}</strong>
+                          {snap.remainderToGoalId ? ' → objectif' : ''}</span>
+                      </div>
+                    )}
+                    {!snap.closedAt && snap.month <= cm && (
+                      <button onClick={() => setClosing(snap.month)} className="mt-1.5 text-xs font-medium text-primary hover:text-primary-dark">
+                        Enregistrer l'épargne réelle et le reste →
+                      </button>
+                    )}
+                    {snap.closedAt && (
+                      <button onClick={() => setClosing(snap.month)} className="mt-1 text-[11px] text-slate-400 hover:text-primary">Modifier</button>
+                    )}
+                    {actualTransferred > 0 && !snap.closedAt && (
                       <div className="mt-1.5 flex items-center gap-1.5 text-xs">
                         <ArrowUpRight size={12} className="text-emerald-600" />
                         <span className="text-slate-500">Réellement viré :</span>
@@ -225,6 +313,14 @@ export default function History() {
           </div>
           </div>{/* end grid */}
         </>
+      )}
+
+      {closingSnap && (
+        <CloseMonthModal
+          snap={closingSnap}
+          onClose={() => setClosing(null)}
+          onSave={payload => { dispatch({ type: 'CLOSE_MONTH', payload }); setClosing(null); }}
+        />
       )}
     </div>
   );

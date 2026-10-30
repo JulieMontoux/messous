@@ -7,33 +7,46 @@ function toBudget(monthly, mode) {
   return round5(mode === 'weekly' ? weeklyAmount(monthly) : monthly);
 }
 
-function withSpending(envList, transactions, mode) {
+function withSpending(envList, transactions, mode, opts) {
   return envList.map(e => {
     const budget = toBudget(e.budgetMonthly, mode);
-    const spent = spentInPeriod(transactions, e.id, mode);
+    const spent = spentInPeriod(transactions, e.id, mode, opts);
     return { ...e, budget, spent, toWithdraw: Math.max(0, budget - spent) };
   });
 }
 
-export function computeWithdrawal({ envelopes, transactions, mode, idealNeeds, idealWants, idealSavings }) {
+// Espèces encore en poche : retiré sur la période − dépenses payées en espèces sur la période
+export function cashInHand(withdrawn, cashSpent) {
+  return Math.max(0, (Number(withdrawn) || 0) - (Number(cashSpent) || 0));
+}
+
+// opts.since : début de période · withdrawn : total réellement retiré depuis ce début.
+// Le montant à retirer = budget − dépenses (carte + espèces) − espèces encore en poche.
+export function computeWithdrawal({ envelopes, transactions, mode, idealNeeds, idealWants, idealSavings, withdrawn = 0, since }) {
+  const opts = since ? { since } : {};
   const tobaccoEnv = envelopes.find(e => e.categoryId === 'tobacco');
   const needEnvs = envelopes.filter(e => e.type === 'need');
   const wantEnvs = envelopes.filter(e => e.type === 'want' && e.categoryId !== 'tobacco');
   const savingEnvs = envelopes.filter(e => e.type === 'saving');
 
-  const needsData = withSpending(needEnvs, transactions, mode);
-  const wantData = withSpending(wantEnvs, transactions, mode);
-  const savingData = withSpending(savingEnvs, transactions, mode);
+  const needsData = withSpending(needEnvs, transactions, mode, opts);
+  const wantData = withSpending(wantEnvs, transactions, mode, opts);
+  const savingData = withSpending(savingEnvs, transactions, mode, opts);
 
   const tobaccoBudget = tobaccoEnv ? toBudget(tobaccoEnv.budgetMonthly, mode) : 0;
-  const tobaccoSpent = tobaccoEnv ? spentInPeriod(transactions, tobaccoEnv.id, mode) : 0;
+  const tobaccoSpent = tobaccoEnv ? spentInPeriod(transactions, tobaccoEnv.id, mode, opts) : 0;
+
+  const cashSpent = withdrawn > 0
+    ? envelopes.reduce((s, e) => s + spentInPeriod(transactions, e.id, mode, { ...opts, method: 'cash' }), 0)
+    : 0;
+  const inHand = cashInHand(withdrawn, cashSpent);
   const tobaccoToWithdraw = Math.max(0, tobaccoBudget - tobaccoSpent);
 
   // Envelope mode
   const envNeedsTotal = needsData.reduce((s, e) => s + e.toWithdraw, 0);
   const envWantsTotal = wantData.reduce((s, e) => s + e.toWithdraw, 0);
   const envSavingsTotal = savingData.reduce((s, e) => s + e.toWithdraw, 0);
-  const envGrandTotal = roundUp5(envNeedsTotal + tobaccoToWithdraw + envWantsTotal + envSavingsTotal);
+  const envGrandTotal = roundUp5(Math.max(0, envNeedsTotal + tobaccoToWithdraw + envWantsTotal + envSavingsTotal - inHand));
 
   // Ideal mode — spending-aware per group
   const needsSpent = needsData.reduce((s, e) => s + e.spent, 0);
@@ -47,9 +60,12 @@ export function computeWithdrawal({ envelopes, transactions, mode, idealNeeds, i
   const idealNeedsToWithdraw = Math.max(0, idealNeedsBudget - needsSpent);
   const idealWantsToWithdraw = Math.max(0, idealWantsBudget - wantSpent);
   const idealSavingsToWithdraw = Math.max(0, idealSavingsBudget - savingSpent);
-  const idealGrandTotal = roundUp5(idealNeedsToWithdraw + tobaccoToWithdraw + idealWantsToWithdraw + idealSavingsToWithdraw);
+  const idealGrandTotal = roundUp5(Math.max(0, idealNeedsToWithdraw + tobaccoToWithdraw + idealWantsToWithdraw + idealSavingsToWithdraw - inHand));
 
   return {
+    withdrawn,
+    cashSpent,
+    cashInHand: inHand,
     envelopes: {
       needs: needsData,
       wants: wantData,

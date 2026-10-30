@@ -29,36 +29,62 @@ export const api = {
   post: (path, body) => request('POST', path, body),
   get: (path) => request('GET', path),
   put: (path, body) => request('PUT', path, body),
+  patch: (path, body) => request('PATCH', path, body),
   delete: (path) => request('DELETE', path),
 };
 
+export const DEFAULT_PROFILE = {
+  firstName: '',
+  netSalary: 0,
+  hasCar: true,
+  isSmoker: false,
+  householdAdults: 1,
+  householdChildren: 0,
+  pets: { dogs: 0, cats: 0, other: 0 },
+  region: 'Île-de-France',
+  supermarket: 'leclerc',
+  registrationDate: null,
+  onboardingDone: false,
+  tobaccoType: 'indus',
+  tobaccoPackPrice: 13,
+  tobaccoPacksPerWeek: 7,
+  alertsEnabled: true,
+  alertThreshold: 80,
+  alertEmail: '',
+  monthEndEmail: true,
+  accountEmail: '',
+  mailConfigured: false,
+};
+
+export async function fetchBankTransactions() {
+  const from = new Date();
+  from.setDate(from.getDate() - 62);
+  return api.get(`/api/bank/transactions?from=${from.toISOString().slice(0, 10)}`).catch(() => []);
+}
+
 export async function fetchAll() {
-  const [profile, settings, fixedCharges, envelopes, transactions, savingsHistory] = await Promise.all([
+  const [profile, settings, fixedCharges, envelopes, transactions, savingsHistory, withdrawals, bankTransactions] = await Promise.all([
     api.get('/api/profile'),
     api.get('/api/settings'),
     api.get('/api/charges'),
     api.get('/api/envelopes'),
     api.get('/api/transactions'),
     api.get('/api/savings'),
+    api.get('/api/withdrawals').catch(() => []),
+    fetchBankTransactions(),
   ]);
   return {
     profile: {
-      firstName: profile.firstName || '',
+      ...DEFAULT_PROFILE,
+      ...Object.fromEntries(Object.entries(profile).filter(([, v]) => v !== null && v !== undefined)),
       netSalary: Number(profile.netSalary) || 0,
-      hasCar: profile.hasCar ?? true,
-      isSmoker: profile.isSmoker ?? false,
-      householdAdults: profile.householdAdults ?? 1,
-      householdChildren: profile.householdChildren ?? 0,
-      pets: profile.pets || { dogs: 0, cats: 0, other: 0 },
-      region: profile.region || 'Île-de-France',
-      supermarket: profile.supermarket || 'leclerc',
-      registrationDate: profile.registrationDate || null,
-      onboardingDone: profile.onboardingDone || false,
     },
     settings: { viewMode: settings.view_mode || settings.viewMode || 'monthly' },
     fixedCharges,
     envelopes,
     transactions,
     savingsHistory,
+    withdrawals,
+    bankTransactions,
   };
 }

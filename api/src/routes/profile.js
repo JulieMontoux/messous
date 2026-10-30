@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { pool } = require('../db');
 const auth = require('../middleware/auth');
+const { sendMail, layout, isMailConfigured, recipientFor } = require('../lib/mailer');
 
 router.use(auth);
 
@@ -17,48 +18,76 @@ function toClient(r) {
     supermarket: r.supermarket || 'leclerc',
     registrationDate: r.registration_date || null,
     onboardingDone: r.onboarding_done ?? false,
+    tobaccoType: r.tobacco_type || 'indus',
+    tobaccoPackPrice: r.tobacco_pack_price != null ? Number(r.tobacco_pack_price) : 13,
+    tobaccoPacksPerWeek: r.tobacco_packs_per_week != null ? Number(r.tobacco_packs_per_week) : 7,
+    alertsEnabled: r.alerts_enabled ?? true,
+    alertThreshold: r.alert_threshold ?? 80,
+    alertEmail: r.alert_email || '',
+    monthEndEmail: r.month_end_email ?? true,
   };
 }
 
+// Champ client → colonne SQL (+ conversion éventuelle)
+const FIELDS = {
+  firstName: 'first_name',
+  netSalary: 'net_salary',
+  hasCar: 'has_car',
+  isSmoker: 'is_smoker',
+  householdAdults: 'household_adults',
+  householdChildren: 'household_children',
+  pets: ['pets', v => JSON.stringify(v)],
+  region: 'region',
+  supermarket: 'supermarket',
+  registrationDate: 'registration_date',
+  onboardingDone: 'onboarding_done',
+  tobaccoType: 'tobacco_type',
+  tobaccoPackPrice: 'tobacco_pack_price',
+  tobaccoPacksPerWeek: 'tobacco_packs_per_week',
+  alertsEnabled: 'alerts_enabled',
+  alertThreshold: 'alert_threshold',
+  alertEmail: ['alert_email', v => (v ? String(v).trim() : null)],
+  monthEndEmail: 'month_end_email',
+};
+
 router.get('/', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [req.user.userId]);
-  res.json(rows[0] ? toClient(rows[0]) : {});
+  const { rows: [user] } = await pool.query('SELECT email FROM users WHERE id = $1', [req.user.userId]);
+  res.json(rows[0] ? { ...toClient(rows[0]), accountEmail: user?.email || '', mailConfigured: isMailConfigured() } : {});
 });
 
 router.put('/', async (req, res) => {
-  const { firstName, netSalary, hasCar, isSmoker, householdAdults, householdChildren, pets, region, supermarket, registrationDate, onboardingDone } = req.body;
-  const { rows } = await pool.query(
-    `INSERT INTO profiles (user_id, first_name, net_salary, has_car, is_smoker, household_adults, household_children, pets, region, supermarket, registration_date, onboarding_done)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-     ON CONFLICT (user_id) DO UPDATE SET
-      first_name = COALESCE($2, profiles.first_name),
-      net_salary = COALESCE($3, profiles.net_salary),
-      has_car = COALESCE($4, profiles.has_car),
-      is_smoker = COALESCE($5, profiles.is_smoker),
-      household_adults = COALESCE($6, profiles.household_adults),
-      household_children = COALESCE($7, profiles.household_children),
-      pets = COALESCE($8, profiles.pets),
-      region = COALESCE($9, profiles.region),
-      supermarket = COALESCE($10, profiles.supermarket),
-      registration_date = COALESCE($11, profiles.registration_date),
-      onboarding_done = COALESCE($12, profiles.onboarding_done)
-     RETURNING *`,
-    [
-      req.user.userId,
-      firstName ?? null,
-      netSalary ?? null,
-      hasCar ?? null,
-      isSmoker ?? null,
-      householdAdults ?? null,
-      householdChildren ?? null,
-      pets ? JSON.stringify(pets) : null,
-      region ?? null,
-      supermarket ?? null,
-      registrationDate ?? null,
-      onboardingDone ?? null,
-    ]
-  );
-  res.json(toClient(rows[0]));
+  try {
+    const cols = [];
+    const vals = [req.user.userId];
+    for (const [key, def] of Object.entries(FIELDS)) {
+      if (req.body[key] === undefined || req.body[key] === null) continue;
+      const [col, conv] = Array.isArray(def) ? def : [def, v => v];
+      vals.push(conv(req.body[key]));
+      cols.push([col, `$${vals.length}`]);
+    }
+    await pool.query('INSERT INTO profiles (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING', [req.user.userId]);
+    const { rows } = cols.length
+      ? await pool.query(
+          `UPDATE profiles SET ${cols.map(([c, p]) => `${c} = ${p}`).join(', ')} WHERE user_id = $1 RETURNING *`,
+          vals
+        )
+      : await pool.query('SELECT * FROM profiles WHERE user_id = $1', [req.user.userId]);
+    res.json(toClient(rows[0]));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/test-email', async (req, res) => {
+  try {
+    if (!isMailConfigured()) return res.status(400).json({ error: 'SMTP non configuré sur le serveur (variables SMTP_*)' });
+    const recipient = await recipientFor(req.user.userId);
+    await sendMail({
+      to: recipient.email,
+      subject: '✅ MesSous : e-mails activés',
+      html: layout('Les e-mails fonctionnent !', '<p>Tu recevras ici les alertes d\'enveloppes et le rappel de fin de mois.</p>'),
+    });
+    res.json({ ok: true, to: recipient.email });
+  } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
 module.exports = router;

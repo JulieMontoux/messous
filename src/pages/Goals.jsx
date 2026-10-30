@@ -169,7 +169,7 @@ export default function Goals() {
   const totalCurrent = goals.reduce((s, g) => s + g.currentAmount, 0);
 
   return (
-    <div className="px-4 pt-6 pb-4 space-y-4">
+    <div className="pt-6 pb-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Objectifs</h1>
