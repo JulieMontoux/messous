@@ -1,3 +1,5 @@
+import { periodStart, toLocalDate, daysInMonth, daysBetween, monthKey } from './period';
+
 export function fmt(amount) {
   return new Intl.NumberFormat('fr-FR', {
     style: 'currency',
@@ -37,20 +39,11 @@ export function totalSavingEnvelopesBudget(envelopes) {
   return envelopes.filter(e => e.type === 'saving').reduce((sum, e) => sum + (Number(e.budgetMonthly) || 0), 0);
 }
 
-export function actualSavingsInPeriod(transactions, envelopes, mode) {
+export function actualSavingsInPeriod(transactions, envelopes, mode, opts = {}) {
   const savingEnvIds = new Set(envelopes.filter(e => e.type === 'saving').map(e => e.id));
-  const now = new Date();
-  let cutoff;
-  if (mode === 'weekly') {
-    cutoff = new Date(now);
-    const day = now.getDay();
-    cutoff.setDate(now.getDate() + (day === 0 ? -6 : 1 - day));
-    cutoff.setHours(0, 0, 0, 0);
-  } else {
-    cutoff = new Date(now.getFullYear(), now.getMonth(), 1);
-  }
+  const since = opts.since || periodStart(mode, opts);
   return transactions
-    .filter(t => savingEnvIds.has(t.envelopeId) && new Date(t.date) >= cutoff)
+    .filter(t => savingEnvIds.has(t.envelopeId) && t.date >= since)
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 }
 
@@ -92,21 +85,66 @@ export const HEALTH_CONFIG = {
   unknown: { label: '—', bg: 'bg-slate-50', text: 'text-slate-400', dot: 'bg-slate-300' },
 };
 
-export function spentInPeriod(transactions, envelopeId, mode) {
-  const now = new Date();
-  let cutoff;
-  if (mode === 'weekly') {
-    cutoff = new Date(now);
-    const day = now.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    cutoff.setDate(now.getDate() + diff);
-    cutoff.setHours(0, 0, 0, 0);
-  } else {
-    cutoff = new Date(now.getFullYear(), now.getMonth(), 1);
-  }
+// Dépenses d'une enveloppe sur la période (mois ou semaine budgétaire).
+// opts.since : début de période explicite · opts.method : 'cash' | 'card' pour filtrer
+export function spentInPeriod(transactions, envelopeId, mode, opts = {}) {
+  const since = opts.since || periodStart(mode, opts);
   return transactions
-    .filter(t => t.envelopeId === envelopeId && new Date(t.date) >= cutoff)
+    .filter(t => t.envelopeId === envelopeId && t.date >= since
+      && (!opts.method || (t.paymentMethod || 'cash') === opts.method))
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+}
+
+export function transactionsInPeriod(transactions, envelopeId, since) {
+  return transactions.filter(t => t.envelopeId === envelopeId && t.date >= since);
+}
+
+// Prévision de fin de période au rythme actuel.
+// Sur la période en cours on reste « chill » : seul un dépassement réel est alarmant,
+// un rythme soutenu n'est qu'une indication (et rien n'est extrapolé les premiers jours).
+export function envelopeForecast({ budget, spent, since, periodDays, now = new Date() }) {
+  const elapsedDays = Math.min(periodDays, Math.max(1, daysBetween(since, toLocalDate(now)) + 1));
+  const ratio = elapsedDays / periodDays;
+  const projected = ratio >= 0.25 ? spent / ratio : null;
+  const remaining = budget - spent;
+  const daysLeft = periodDays - elapsedDays;
+  let status = 'ok';
+  if (budget > 0 && spent > budget) status = 'over';
+  else if (budget > 0 && projected != null && projected > budget * 1.1) status = 'pace';
+  return {
+    projected,
+    remaining,
+    daysLeft,
+    perDayLeft: daysLeft > 0 ? Math.max(0, remaining) / daysLeft : Math.max(0, remaining),
+    status,
+  };
+}
+
+export const FORECAST_LABEL = {
+  ok: { text: 'Dans les clous', cls: 'text-savings' },
+  pace: { text: 'Rythme un peu soutenu — rien de grave, le mois est en cours', cls: 'text-warn' },
+  over: { text: 'Budget dépassé', cls: 'text-danger' },
+};
+
+export function periodDaysFor(mode, now = new Date()) {
+  return mode === 'weekly' ? 7 : daysInMonth(now);
+}
+
+// Dépenses réelles en temps réel : dépenses d'enveloppes (espèces + carte classées)
+// + paiements carte de la banque pas encore classés.
+export function realSpending({ transactions, envelopes, bankTransactions = [], since }) {
+  const savingIds = new Set(envelopes.filter(e => e.type === 'saving').map(e => e.id));
+  const tx = transactions.filter(t => t.date >= since && !savingIds.has(t.envelopeId));
+  const cash = tx.filter(t => (t.paymentMethod || 'cash') === 'cash').reduce((s, t) => s + Number(t.amount), 0);
+  const cardClassified = tx.filter(t => t.paymentMethod === 'card').reduce((s, t) => s + Number(t.amount), 0);
+  const unclassified = bankTransactions
+    .filter(b => b.date >= since && b.amount < 0 && b.isCard && !b.ignored && !b.envelopeId)
+    .reduce((s, b) => s + Math.abs(b.amount), 0);
+  return { cash, cardClassified, unclassified, total: cash + cardClassified + unclassified };
+}
+
+export function isCurrentMonth(month, now = new Date()) {
+  return month === monthKey(now);
 }
 
 export function savingsRate(salary, charges, envelopes) {
@@ -134,4 +172,10 @@ export function donutData(salary, charges, envelopes) {
   if (remainder < 0) data.push({ name: 'Déficit', value: Math.abs(remainder), color: '#f43f5e' });
 
   return data;
+}
+
+// Épargne réellement constituée sur un mois clôturé (versements + reste placé sur un objectif)
+export function realSavings(snap) {
+  if (!snap?.closedAt) return null;
+  return (snap.actualSavings || 0) + (snap.remainderToGoalId ? (snap.actualRemainder || 0) : 0);
 }

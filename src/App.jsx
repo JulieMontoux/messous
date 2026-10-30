@@ -13,6 +13,7 @@ import Goals from './pages/Goals';
 import Suggestions from './pages/Suggestions';
 import Settings from './pages/Settings';
 import History from './pages/History';
+import Bank from './pages/Bank';
 import { api, fetchAll } from './api/client';
 import {
   totalFixed as getTotalFixed,
@@ -32,8 +33,14 @@ const PAGES = {
   goals: Goals,
   suggestions: Suggestions,
   history: History,
+  bank: Bank,
   settings: Settings,
 };
+
+// Page initiale lue dans l'URL (liens des e-mails : /?page=history&close=2026-10)
+function readUrlParams() {
+  return Object.fromEntries(new URLSearchParams(window.location.search));
+}
 
 function parseLegacy() {
   try {
@@ -134,7 +141,16 @@ function MigrationScreen({ onDone }) {
 
 function BudgetApp() {
   const { state, dispatch, ready } = useBudget();
-  const [page, setPage] = useState('dashboard');
+  const [params, setParams] = useState(readUrlParams);
+  const [page, setPageState] = useState(() => (PAGES[params.page] ? params.page : 'dashboard'));
+
+  function setPage(next, nextParams = {}) {
+    setPageState(next);
+    setParams(nextParams);
+    const qs = new URLSearchParams({ page: next, ...nextParams }).toString();
+    window.history.replaceState(null, '', `?${qs}`);
+    window.scrollTo(0, 0);
+  }
   const [migrating, setMigrating] = useState(() => !!parseLegacy());
   const { profile, fixedCharges, envelopes } = state;
 
@@ -186,7 +202,7 @@ function BudgetApp() {
 
   return (
     <Layout page={page} onNavigate={setPage}>
-      <Page />
+      <Page key={page} params={params} navigate={setPage} />
     </Layout>
   );
 }

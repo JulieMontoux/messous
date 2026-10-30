@@ -332,3 +332,42 @@ describe('edge cases', () => {
     expect(r.envelopes.grandTotal).toBe(0);
   });
 });
+
+// ─── RETRAITS DÉJÀ EFFECTUÉS ─────────────────────────────────────────────────
+
+describe('withdrawn cash already in hand', () => {
+  // spentInPeriod mocké : total par enveloppe, et part espèces via opts.method
+  const mockSpentByMethod = (all, cash) =>
+    budgetUtils.spentInPeriod.mockImplementation((_, id, __, opts = {}) =>
+      opts.method === 'cash' ? (cash[id] ?? 0) : (all[id] ?? 0));
+
+  it('withdrawn = 0 → comportement inchangé', () => {
+    const r = computeWithdrawal({ envelopes: [grocery], transactions: TXS, mode: 'monthly', ...BASE });
+    expect(r.cashInHand).toBe(0);
+    expect(r.envelopes.grandTotal).toBe(300);
+  });
+
+  it('retiré 50, dépensé 40 en espèces → reste 50 à retirer', () => {
+    mockSpentByMethod({ g1: 40 }, { g1: 40 });
+    const r = computeWithdrawal({ envelopes: [grocery], transactions: TXS, mode: 'monthly', withdrawn: 50, ...BASE });
+    expect(r.cashInHand).toBe(10);
+    expect(r.envelopes.grandTotal).toBe(250);
+  });
+
+  it('retiré 300, rien dépensé → plus rien à retirer', () => {
+    const r = computeWithdrawal({ envelopes: [grocery], transactions: TXS, mode: 'monthly', withdrawn: 300, ...BASE });
+    expect(r.envelopes.grandTotal).toBe(0);
+  });
+
+  it('dépenses carte non couvertes par les espèces', () => {
+    mockSpentByMethod({ g1: 100 }, { g1: 0 });
+    const r = computeWithdrawal({ envelopes: [grocery], transactions: TXS, mode: 'monthly', withdrawn: 100, ...BASE });
+    // 300 − 100 (carte) − 100 (espèces en poche) = 100
+    expect(r.envelopes.grandTotal).toBe(100);
+  });
+
+  it('jamais négatif en mode idéal', () => {
+    const r = computeWithdrawal({ envelopes: [grocery], transactions: TXS, mode: 'monthly', withdrawn: 5000, ...BASE });
+    expect(r.ideal.grandTotal).toBe(0);
+  });
+});

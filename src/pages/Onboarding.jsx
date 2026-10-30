@@ -6,6 +6,7 @@ import {
 } from '../data/defaults';
 import { SUPERMARKETS } from '../data/supermarkets';
 import { fmt } from '../utils/budget';
+import TobaccoFields from '../components/TobaccoFields';
 
 const TOTAL_STEPS = 5;
 
@@ -53,6 +54,9 @@ export default function Onboarding() {
     householdChildren: 0,
     pets: { dogs: 0, cats: 0, other: 0 },
     isSmoker: false,
+    tobaccoType: 'indus',
+    tobaccoPackPrice: 13,
+    tobaccoPacksPerWeek: 7,
     hasCar: true,
     region: 'Île-de-France',
   });
@@ -229,6 +233,12 @@ export default function Onboarding() {
                 </button>
               ))}
             </div>
+            {profile.isSmoker && (
+              <div className="card">
+                <p className="font-medium text-slate-700 mb-3">🚬 Ce que tu fumes</p>
+                <TobaccoFields value={profile} onChange={patch => setProfile(p => ({ ...p, ...patch }))} />
+              </div>
+            )}
             <div>
               <label className="label">Supermarché habituel</label>
               <p className="text-xs text-slate-400 mb-2">Sert à estimer ton budget courses</p>

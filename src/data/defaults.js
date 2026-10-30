@@ -62,6 +62,24 @@ export const COLOR_MAP = {
   warn: { bg: '#fef3c7', text: '#d97706', ring: '#f59e0b' },
 };
 
+// Profil tabac : type, unité d'achat et prix par défaut (modifiable dans le profil)
+export const TOBACCO_TYPES = [
+  { id: 'indus', label: 'Cigarettes industrielles', short: 'Industrielles', icon: '🚬', unit: 'paquet', unitPlural: 'paquets', defaultPrice: 13.0, defaultPerWeek: 7 },
+  { id: 'roule', label: 'Tabac à rouler', short: 'Roulé', icon: '🌿', unit: 'blague', unitPlural: 'blagues', defaultPrice: 17.5, defaultPerWeek: 2 },
+  { id: 'tube', label: 'Tabac à tuber', short: 'Tubé', icon: '🧪', unit: 'pot (tubes inclus)', unitPlural: 'pots', defaultPrice: 42.0, defaultPerWeek: 0.5 },
+];
+
+export function getTobaccoType(id) {
+  return TOBACCO_TYPES.find(t => t.id === id) || TOBACCO_TYPES[0];
+}
+
+// Coût mensuel moyen (52 semaines / 12 mois)
+export function tobaccoMonthlyBudget(profile) {
+  const price = Number(profile?.tobaccoPackPrice) || getTobaccoType(profile?.tobaccoType).defaultPrice;
+  const perWeek = Number(profile?.tobaccoPacksPerWeek) || 0;
+  return Math.round((price * perWeek * 52) / 12);
+}
+
 export function generateId() {
   return crypto.randomUUID();
 }
@@ -80,7 +98,7 @@ export function suggestEnvelopes(profile) {
   const groceries = adjustGroceryBudget(baseGroceries, supermarket || 'autre');
 
   const fuel = hasCar ? Math.round((adults * 120) / 10) * 10 : 0;
-  const tobacco = isSmoker ? Math.round((adults * 13 * 20) / 10) * 10 : 0;
+  const tobacco = isSmoker ? Math.ceil(tobaccoMonthlyBudget(profile) / 10) * 10 : 0;
   const health = Math.round(((adults + children) * 30) / 10) * 10;
   const petsAmt = totalPets > 0
     ? Math.round(((pets?.dogs || 0) * 70 + (pets?.cats || 0) * 45 + (pets?.other || 0) * 25) / 10) * 10
