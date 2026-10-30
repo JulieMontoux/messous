@@ -30,7 +30,7 @@ function SpendTile({ label, value, sub, accent = 'text-slate-800' }) {
 const FREQ_LABEL = { quarterly: ' · trimestriel', yearly: ' · annuel' };
 
 // Valeur du menu de classement : « env:<id> », « fix:<id> » ou « new-fix »
-function BankRow({ b, envelopes, fixedCharges, onAssign, onUnassign, onIgnore, onCreateCharge }) {
+function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onAssign, onUnassign, onIgnore, onCreateCharge }) {
   const [target, setTarget] = useState('');
   const [remember, setRemember] = useState(true);
   const env = envelopes.find(e => e.id === b.envelopeId);
@@ -44,9 +44,18 @@ function BankRow({ b, envelopes, fixedCharges, onAssign, onUnassign, onIgnore, o
   }
 
   return (
-    <div className={cn('py-3 border-b border-slate-50 last:border-0', b.ignored && 'opacity-50')}>
+    <div className={cn('py-3 border-b border-slate-50 last:border-0', b.ignored && 'opacity-50', selected && 'bg-primary/5 -mx-2 px-2 rounded-lg')}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        {debit && (
+          <input
+            type="checkbox"
+            className="mt-1 w-4 h-4 accent-primary flex-shrink-0 cursor-pointer"
+            checked={selected}
+            onChange={() => onToggle(b.id)}
+            aria-label="Sélectionner"
+          />
+        )}
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-slate-700 truncate flex items-center gap-1.5">
             {b.isCard && <CreditCard size={12} className="text-slate-400 flex-shrink-0" />}
             {b.label || '—'}
@@ -68,7 +77,7 @@ function BankRow({ b, envelopes, fixedCharges, onAssign, onUnassign, onIgnore, o
               <X size={12} /> Retirer
             </button>
           </div>
-        ) : (
+        ) : bulkMode ? null : (
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <select className="input py-1.5 text-xs flex-1 min-w-[160px]" value={target} onChange={e => setTarget(e.target.value)}>
               <option value="">Classer dans…</option>
@@ -100,6 +109,54 @@ function BankRow({ b, envelopes, fixedCharges, onAssign, onUnassign, onIgnore, o
           <Eye size={12} /> Ne plus ignorer
         </button>
       )}
+    </div>
+  );
+}
+
+// Barre de classement en masse (opérations cochées)
+function BulkBar({ count, total, envelopes, fixedCharges, onApply, onClear }) {
+  const [target, setTarget] = useState('');
+  const [remember, setRemember] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  async function apply(action) {
+    setBusy(true);
+    await onApply(action, remember);
+    setBusy(false);
+    setTarget('');
+  }
+
+  return (
+    <div className="sticky top-2 z-20 bg-slate-800 text-white rounded-xl p-3 mb-3 shadow-lg space-y-2">
+      <div className="flex items-center justify-between text-sm">
+        <span><strong>{count}</strong> sélectionnée{count > 1 ? 's' : ''} · {fmtDec(total)}</span>
+        <button onClick={onClear} className="text-xs text-slate-300 hover:text-white flex items-center gap-1"><X size={12} /> Désélectionner</button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="input py-1.5 text-xs text-slate-800 flex-1 min-w-[160px]" value={target} onChange={e => setTarget(e.target.value)}>
+          <option value="">Classer dans…</option>
+          {envelopes.length > 0 && (
+            <optgroup label="Enveloppes">
+              {envelopes.map(e => <option key={e.id} value={`env:${e.id}`}>{e.icon || ''} {e.name}</option>)}
+            </optgroup>
+          )}
+          {fixedCharges.length > 0 && (
+            <optgroup label="Charges fixes">
+              {fixedCharges.map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
+            </optgroup>
+          )}
+        </select>
+        <label className="flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
+          <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
+          retenir ces marchands
+        </label>
+        <button className="btn-primary py-1.5 px-3 text-xs" disabled={!target || busy} onClick={() => apply(target)}>
+          Classer
+        </button>
+        <button className="py-1.5 px-3 text-xs rounded-xl bg-white/10 hover:bg-white/20 flex items-center gap-1" disabled={busy} onClick={() => apply('ignore')}>
+          <EyeOff size={12} /> Ignorer
+        </button>
+      </div>
     </div>
   );
 }
@@ -183,6 +240,7 @@ function ConnectModal({ onClose }) {
       <p className="text-xs text-slate-500">
         Connexion sécurisée DSP2 via Enable Banking : tu t'identifies directement sur le site de ta banque,
         MesSous ne voit jamais tes identifiants. Accès en lecture seule, valable 180 jours.
+        Les opérations sont récupérées à partir du 1er du mois dernier.
       </p>
       <div className="relative">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -243,7 +301,8 @@ function ImportModal({ onClose, onImported }) {
     >
       <p className="text-xs text-slate-500">
         Exporte tes opérations depuis l'espace client de ta banque (format CSV). Colonnes reconnues :
-        Date, Libellé, Montant (ou Débit / Crédit). Les doublons sont ignorés : tu peux réimporter sans risque.
+        Date, Libellé, Montant (ou Débit / Crédit). Seules les opérations depuis le 1er du mois dernier sont importées,
+        et les doublons sont ignorés : tu peux réimporter sans risque.
       </p>
       <div>
         <label className="label">Compte</label>
@@ -264,6 +323,8 @@ export default function Bank({ params = {} }) {
   const [newCharge, setNewCharge] = useState(null);
   const [status, setStatus] = useState(null);
   const [filter, setFilter] = useState('todo');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState(() => new Set());
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState(
     params.bank === 'ok' ? { ok: true, text: 'Banque connectée ✅ Les opérations ont été récupérées.' }
@@ -343,6 +404,30 @@ export default function Bank({ params = {} }) {
     if (b.fixedChargeId) await reloadCharges();
   }
 
+  function toggle(id) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function bulkApply(action, remember) {
+    const ids = [...selected];
+    const [kind, id] = action.split(':');
+    const body = action === 'ignore' ? { ids, ignore: true }
+      : kind === 'fix' ? { ids, fixedChargeId: id, remember } : { ids, envelopeId: id, remember };
+    try {
+      const r = await api.post('/api/bank/transactions/bulk', body);
+      setSelected(new Set());
+      await refresh();
+      if (kind === 'fix') await reloadCharges();
+      setMessage({ ok: true, text: `${r.updated} opération${r.updated > 1 ? 's' : ''} ${action === 'ignore' ? 'ignorée' : 'classée'}${r.updated > 1 ? 's' : ''}.` });
+    } catch (err) {
+      setMessage({ ok: false, text: err.message });
+    }
+  }
+
   async function ignore(b, ignored) {
     await api.post(`/api/bank/transactions/${b.id}/ignore`, { ignored });
     dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bankTransactions.map(x => x.id === b.id ? { ...x, ignored } : x) });
@@ -365,12 +450,17 @@ export default function Bank({ params = {} }) {
   const week = useMemo(() => realSpending({ transactions, envelopes, bankTransactions, since: weekSince }), [transactions, envelopes, bankTransactions, weekSince]);
   const todoCount = bankTransactions.filter(isTodo).length;
 
+  const query = search.trim().toLowerCase();
   const visible = bankTransactions.filter(b => {
+    if (query && !(b.label || '').toLowerCase().includes(query)) return false;
     if (filter === 'todo') return isTodo(b);
     if (filter === 'card') return b.amount < 0;
     if (filter === 'ignored') return b.ignored;
     return true;
   });
+  const selectable = visible.filter(b => b.amount < 0);
+  const allSelected = selectable.length > 0 && selectable.every(b => selected.has(b.id));
+  const selectedTotal = bankTransactions.filter(b => selected.has(b.id)).reduce((sum, b) => sum + Math.abs(b.amount), 0);
 
   const hasData = bankTransactions.length > 0 || (status?.accounts?.length ?? 0) > 0;
   const activeConnections = status?.connections?.filter(c => c.status === 'active') || [];
@@ -471,13 +561,44 @@ export default function Bank({ params = {} }) {
             {FILTERS.map(f => (
               <button
                 key={f.id}
-                onClick={() => setFilter(f.id)}
+                onClick={() => { setFilter(f.id); setSelected(new Set()); }}
                 className={cn('flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors', filter === f.id ? 'bg-white text-primary shadow-sm' : 'text-slate-500')}
               >
                 {f.label}{f.id === 'todo' && todoCount > 0 ? ` (${todoCount})` : ''}
               </button>
             ))}
           </div>
+          <div className="flex items-center gap-2 mb-2">
+            <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer flex-shrink-0">
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-primary"
+                checked={allSelected}
+                disabled={!selectable.length}
+                onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map(b => b.id)))}
+              />
+              Tout
+            </label>
+            <div className="relative flex-1">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                className="input py-1.5 pl-7 text-xs"
+                placeholder="Filtrer par libellé (ex. lidl, amazon…)"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+          {selected.size > 0 && (
+            <BulkBar
+              count={selected.size}
+              total={selectedTotal}
+              envelopes={envelopes}
+              fixedCharges={fixedCharges}
+              onApply={bulkApply}
+              onClear={() => setSelected(new Set())}
+            />
+          )}
           {visible.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-6">{filter === 'todo' ? 'Tout est classé 🎉' : 'Aucune opération'}</p>
           ) : (
@@ -487,6 +608,9 @@ export default function Bank({ params = {} }) {
                 b={b}
                 envelopes={envelopes}
                 fixedCharges={fixedCharges}
+                selected={selected.has(b.id)}
+                bulkMode={selected.size > 0}
+                onToggle={toggle}
                 onAssign={assign}
                 onUnassign={unassign}
                 onIgnore={ignore}
@@ -528,7 +652,11 @@ export default function Bank({ params = {} }) {
           onImported={async r => {
             setImportOpen(false);
             await refresh();
-            setMessage({ ok: true, text: `${r.parsed} ligne(s) lue(s), ${r.inserted} nouvelle(s), ${r.assigned} classée(s) automatiquement.` });
+            setMessage({
+              ok: true,
+              text: `${r.parsed} ligne(s) lue(s), ${r.inserted} nouvelle(s), ${r.assigned} classée(s) automatiquement`
+                + (r.skipped ? ` · ${r.skipped} antérieure(s) au ${formatDay(r.from, { day: 'numeric', month: 'long' })} ignorée(s).` : '.'),
+            });
           }}
         />
       )}
