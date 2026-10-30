@@ -2,10 +2,11 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { migrate } = require('./db');
+const { startScheduler } = require('./lib/scheduler');
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -25,11 +26,16 @@ app.use('/api/savings', require('./routes/savings'));
 app.use('/api/goals', require('./routes/goals'));
 app.use('/api/recurring', require('./routes/recurring'));
 app.use('/api/ai', require('./routes/ai'));
+app.use('/api/withdrawals', require('./routes/withdrawals'));
+app.use('/api/bank', require('./routes/bank'));
 
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 3001;
 
 migrate()
-  .then(() => app.listen(PORT, () => console.log(`API running on :${PORT}`)))
+  .then(() => {
+    app.listen(PORT, () => console.log(`API running on :${PORT}`));
+    startScheduler();
+  })
   .catch(err => { console.error('DB init failed', err); process.exit(1); });
