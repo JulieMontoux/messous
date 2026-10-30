@@ -4,9 +4,12 @@ const { monthKey, localDate, daysInMonth } = require('./dates');
 
 const eur = v => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(v);
 
-// Vérifie le seuil d'alerte d'une enveloppe sur le mois en cours et envoie un e-mail si franchi
-async function checkEnvelopeAlert(userId, envelopeId) {
+// Vérifie le seuil d'alerte d'une enveloppe sur le mois en cours et envoie un e-mail si franchi.
+// expenseDate : date de la dépense qui déclenche la vérification — une dépense d'un autre mois
+// (ex. classement des opérations du mois précédent) ne déclenche jamais d'e-mail.
+async function checkEnvelopeAlert(userId, envelopeId, expenseDate) {
   if (!envelopeId) return;
+  if (!isInCurrentMonth(expenseDate)) return;
   const { rows: [profile] } = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
   if (!profile || profile.alerts_enabled === false) return;
 
@@ -61,8 +64,14 @@ async function checkEnvelopeAlert(userId, envelopeId) {
   }));
 }
 
+function isInCurrentMonth(date, now = new Date()) {
+  if (!date) return false;
+  const d = date instanceof Date ? localDate(date) : String(date).slice(0, 10);
+  return d.slice(0, 7) === monthKey(now) && d <= localDate(now);
+}
+
 function tobaccoUnit(type) {
   return type === 'roule' ? 'paquet de tabac à rouler' : type === 'tube' ? 'pot de tabac à tuber' : 'paquet';
 }
 
-module.exports = { checkEnvelopeAlert };
+module.exports = { checkEnvelopeAlert, isInCurrentMonth };

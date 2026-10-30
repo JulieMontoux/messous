@@ -7,6 +7,7 @@ const { parseBankCsv } = require('../lib/bank/csv');
 const { merchantKey } = require('../lib/bank/common');
 const { storeTransactions, assignBankTransaction, assignToFixedCharge, syncUser, syncConnection } = require('../lib/bank/sync');
 const { appUrl } = require('../lib/mailer');
+const { checkEnvelopeAlert } = require('../lib/alerts');
 const { bankHistoryStart } = require('../lib/dates');
 
 const txToClient = r => ({
@@ -196,7 +197,7 @@ router.post('/transactions/bulk', async (req, res) => {
       if (!rows.length) return res.status(400).json({ error: 'Enveloppe introuvable' });
     }
     const { rows: btxs } = await pool.query(
-      'SELECT id, label, transaction_id FROM bank_transactions WHERE user_id = $1 AND id = ANY($2::uuid[]) AND amount < 0',
+      'SELECT id, label, transaction_id, booking_date FROM bank_transactions WHERE user_id = $1 AND id = ANY($2::uuid[]) AND amount < 0',
       [userId, ids]
     );
     for (const b of btxs) {
@@ -209,8 +210,13 @@ router.post('/transactions/bulk', async (req, res) => {
       } else if (fixedChargeId) {
         await assignToFixedCharge(userId, b.id, fixedChargeId);
       } else {
-        await assignBankTransaction(userId, b.id, envelopeId);
+        await assignBankTransaction(userId, b.id, envelopeId, { alert: false });
       }
+    }
+    // Une seule vérification d'alerte, et seulement si la sélection contient une dépense du mois en cours
+    if (envelopeId && !ignore) {
+      const latest = btxs.map(b => b.booking_date).sort().pop();
+      checkEnvelopeAlert(userId, envelopeId, latest).catch(err => console.error('[alert]', err.message));
     }
     if (remember && !ignore) {
       const patterns = [...new Set(btxs.map(b => merchantKey(b.label)).filter(Boolean))];

@@ -20,7 +20,7 @@ async function storeTransactions(userId, accountId, txs) {
   return { inserted: newIds.length, assigned };
 }
 
-async function assignBankTransaction(userId, bankTxId, envelopeId) {
+async function assignBankTransaction(userId, bankTxId, envelopeId, { alert = true } = {}) {
   const { rows: [btx] } = await pool.query(
     'SELECT * FROM bank_transactions WHERE id = $1 AND user_id = $2', [bankTxId, userId]
   );
@@ -36,7 +36,7 @@ async function assignBankTransaction(userId, bankTxId, envelopeId) {
     'UPDATE bank_transactions SET envelope_id = $2, transaction_id = $3, fixed_charge_id = NULL, ignored = false WHERE id = $1',
     [btx.id, envelopeId, tx.id]
   );
-  checkEnvelopeAlert(userId, envelopeId).catch(err => console.error('[alert]', err.message));
+  if (alert) checkEnvelopeAlert(userId, envelopeId, btx.booking_date).catch(err => console.error('[alert]', err.message));
   return tx;
 }
 
