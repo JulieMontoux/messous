@@ -6,17 +6,18 @@ const { localDate } = require('../dates');
 
 // Insère les opérations (dédoublonnées), puis applique les règles d'affectation automatique
 async function storeTransactions(userId, accountId, txs) {
-  let inserted = 0;
+  const newIds = [];
   for (const t of txs) {
-    const { rowCount } = await pool.query(
+    const { rows } = await pool.query(
       `INSERT INTO bank_transactions (user_id, account_id, external_id, booking_date, amount, label, is_card)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (user_id, external_id) DO NOTHING`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (user_id, external_id) DO NOTHING RETURNING id`,
       [userId, accountId, t.externalId, t.bookingDate, t.amount, String(t.label).slice(0, 500), t.isCard]
     );
-    inserted += rowCount;
+    if (rows.length) newIds.push(rows[0].id);
   }
-  const assigned = await applyRules(userId);
-  return { inserted, assigned };
+  // Règles appliquées aux seules nouvelles opérations : un classement retiré à la main reste retiré
+  const assigned = await applyRules(userId, newIds);
+  return { inserted: newIds.length, assigned };
 }
 
 async function assignBankTransaction(userId, bankTxId, envelopeId) {
@@ -32,7 +33,7 @@ async function assignBankTransaction(userId, bankTxId, envelopeId) {
     [userId, envelopeId, Math.abs(Number(btx.amount)), cleanLabel(btx.label), btx.booking_date, btx.id]
   );
   await pool.query(
-    'UPDATE bank_transactions SET envelope_id = $2, transaction_id = $3, ignored = false WHERE id = $1',
+    'UPDATE bank_transactions SET envelope_id = $2, transaction_id = $3, fixed_charge_id = NULL, ignored = false WHERE id = $1',
     [btx.id, envelopeId, tx.id]
   );
   checkEnvelopeAlert(userId, envelopeId).catch(err => console.error('[alert]', err.message));
@@ -40,26 +41,42 @@ async function assignBankTransaction(userId, bankTxId, envelopeId) {
 }
 
 // Note lisible pour la dépense : nom du marchand (« Carrefour City ») ou libellé brut à défaut
+// Rattache une opération à une charge fixe : pas de dépense d'enveloppe créée (la charge est déjà au budget)
+async function assignToFixedCharge(userId, bankTxId, fixedChargeId) {
+  const { rows: [btx] } = await pool.query(
+    'SELECT * FROM bank_transactions WHERE id = $1 AND user_id = $2', [bankTxId, userId]
+  );
+  if (!btx) throw Object.assign(new Error('Opération introuvable'), { status: 404 });
+  if (btx.transaction_id) await pool.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [btx.transaction_id, userId]);
+  await pool.query(
+    'UPDATE bank_transactions SET fixed_charge_id = $2, envelope_id = NULL, transaction_id = NULL, ignored = false WHERE id = $1',
+    [btx.id, fixedChargeId]
+  );
+}
+
 function cleanLabel(label) {
   const key = merchantKey(label);
   if (key) return key.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
   return String(label || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 }
 
-async function applyRules(userId) {
+async function applyRules(userId, ids) {
+  if (!ids.length) return 0;
   const { rows: rules } = await pool.query('SELECT * FROM bank_rules WHERE user_id = $1', [userId]);
   if (!rules.length) return 0;
   const { rows: pending } = await pool.query(
     `SELECT id, label FROM bank_transactions
-     WHERE user_id = $1 AND envelope_id IS NULL AND ignored = false AND amount < 0`,
-    [userId]
+     WHERE user_id = $1 AND id = ANY($2::uuid[]) AND envelope_id IS NULL AND fixed_charge_id IS NULL
+       AND ignored = false AND amount < 0`,
+    [userId, ids]
   );
   let count = 0;
   for (const btx of pending) {
     const key = merchantKey(btx.label);
     const rule = rules.find(r => key && (key === r.pattern || key.startsWith(r.pattern)));
     if (rule) {
-      await assignBankTransaction(userId, btx.id, rule.envelope_id);
+      if (rule.fixed_charge_id) await assignToFixedCharge(userId, btx.id, rule.fixed_charge_id);
+      else await assignBankTransaction(userId, btx.id, rule.envelope_id);
       count++;
     }
   }
@@ -105,4 +122,4 @@ async function syncUser(userId) {
   return total;
 }
 
-module.exports = { storeTransactions, assignBankTransaction, applyRules, syncConnection, syncUser, cleanLabel };
+module.exports = { storeTransactions, assignBankTransaction, assignToFixedCharge, applyRules, syncConnection, syncUser, cleanLabel };

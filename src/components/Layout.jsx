@@ -7,6 +7,7 @@ import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useBudget } from '../context/BudgetContext';
 import { useVersionCheck } from '../hooks/useVersionCheck';
+import { isBankTodo } from '../utils/budget';
 
 const NAV = [
   { id: 'dashboard', label: 'Tableau de bord', short: 'Accueil', icon: LayoutDashboard },
@@ -189,7 +190,7 @@ export default function Layout({ page, onNavigate, children }) {
   const [syncError, setSyncError] = useState('');
   const updateAvailable = useVersionCheck();
 
-  const unclassified = state.bankTransactions.filter(b => b.amount < 0 && b.isCard && !b.ignored && !b.envelopeId).length;
+  const unclassified = state.bankTransactions.filter(isBankTodo).length;
 
   useEffect(() => {
     const handler = (e) => {

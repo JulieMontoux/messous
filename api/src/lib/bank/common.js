@@ -12,6 +12,7 @@ function merchantKey(label) {
     .toUpperCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/PAIEMENT PAR CARTE|PAIEMENT CB|ACHAT CB|FACTURE CARTE|CARTE\s*X?\d*|\bCB\b|\bVISA\b|\bMASTERCARD\b/g, ' ')
+    .replace(/\b(PRLV|PRELEVEMENT|SEPA|ECHEANCE|EUROPEEN|DE|DU)\b/g, ' ')
     .replace(/\d{2}[/.-]\d{2}([/.-]\d{2,4})?/g, ' ')
     .replace(/[^A-Z ]/g, ' ')
     .split(/\s+/)

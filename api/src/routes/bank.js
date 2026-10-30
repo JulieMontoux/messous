@@ -5,7 +5,7 @@ const auth = require('../middleware/auth');
 const eb = require('../lib/bank/enablebanking');
 const { parseBankCsv } = require('../lib/bank/csv');
 const { merchantKey } = require('../lib/bank/common');
-const { storeTransactions, assignBankTransaction, syncUser, syncConnection } = require('../lib/bank/sync');
+const { storeTransactions, assignBankTransaction, assignToFixedCharge, syncUser, syncConnection } = require('../lib/bank/sync');
 const { appUrl } = require('../lib/mailer');
 
 const txToClient = r => ({
@@ -16,6 +16,7 @@ const txToClient = r => ({
   label: r.label,
   isCard: r.is_card,
   envelopeId: r.envelope_id,
+  fixedChargeId: r.fixed_charge_id || null,
   transactionId: r.transaction_id,
   ignored: r.ignored,
 });
@@ -61,7 +62,7 @@ router.get('/status', async (req, res) => {
     const [conns, accounts, rules] = await Promise.all([
       pool.query('SELECT id, provider, bank_name, status, valid_until, last_sync_at, last_error FROM bank_connections WHERE user_id = $1 ORDER BY created_at DESC', [userId]),
       pool.query('SELECT id, connection_id, name, iban, balance, balance_at FROM bank_accounts WHERE user_id = $1 ORDER BY name', [userId]),
-      pool.query('SELECT r.id, r.pattern, r.envelope_id FROM bank_rules r WHERE r.user_id = $1 ORDER BY r.pattern', [userId]),
+      pool.query('SELECT r.id, r.pattern, r.envelope_id, r.fixed_charge_id FROM bank_rules r WHERE r.user_id = $1 ORDER BY r.pattern', [userId]),
     ]);
     res.json({
       providerConfigured: eb.isConfigured(),
@@ -73,7 +74,7 @@ router.get('/status', async (req, res) => {
         id: a.id, connectionId: a.connection_id, name: a.name, iban: a.iban,
         balance: a.balance != null ? Number(a.balance) : null, balanceAt: a.balance_at,
       })),
-      rules: rules.rows.map(r => ({ id: r.id, pattern: r.pattern, envelopeId: r.envelope_id })),
+      rules: rules.rows.map(r => ({ id: r.id, pattern: r.pattern, envelopeId: r.envelope_id, fixedChargeId: r.fixed_charge_id })),
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -144,23 +145,31 @@ router.get('/transactions', async (req, res) => {
 
 router.post('/transactions/:id/assign', async (req, res) => {
   try {
-    const { envelopeId, remember = false } = req.body;
-    const { rows: [env] } = await pool.query('SELECT id FROM envelopes WHERE id = $1 AND user_id = $2', [envelopeId, req.user.userId]);
-    if (!env) return res.status(400).json({ error: 'Enveloppe introuvable' });
-    const tx = await assignBankTransaction(req.user.userId, req.params.id, envelopeId);
+    const { envelopeId = null, fixedChargeId = null, remember = false } = req.body;
+    const userId = req.user.userId;
+    let tx = null;
+    if (fixedChargeId) {
+      const { rows: [fc] } = await pool.query('SELECT id FROM fixed_charges WHERE id = $1 AND user_id = $2', [fixedChargeId, userId]);
+      if (!fc) return res.status(400).json({ error: 'Charge fixe introuvable' });
+      await assignToFixedCharge(userId, req.params.id, fixedChargeId);
+    } else {
+      const { rows: [env] } = await pool.query('SELECT id FROM envelopes WHERE id = $1 AND user_id = $2', [envelopeId, userId]);
+      if (!env) return res.status(400).json({ error: 'Enveloppe introuvable' });
+      tx = await assignBankTransaction(userId, req.params.id, envelopeId);
+    }
     if (remember) {
       const { rows: [btx] } = await pool.query('SELECT label FROM bank_transactions WHERE id = $1', [req.params.id]);
       const pattern = merchantKey(btx.label);
       if (pattern) {
         await pool.query(
-          `INSERT INTO bank_rules (user_id, pattern, envelope_id) VALUES ($1, $2, $3)
-           ON CONFLICT (user_id, pattern) DO UPDATE SET envelope_id = EXCLUDED.envelope_id`,
-          [req.user.userId, pattern, envelopeId]
+          `INSERT INTO bank_rules (user_id, pattern, envelope_id, fixed_charge_id) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (user_id, pattern) DO UPDATE SET envelope_id = EXCLUDED.envelope_id, fixed_charge_id = EXCLUDED.fixed_charge_id`,
+          [userId, pattern, fixedChargeId ? null : envelopeId, fixedChargeId]
         );
       }
     }
     res.json({
-      transaction: {
+      transaction: tx && {
         id: tx.id, envelopeId: tx.envelope_id, amount: Number(tx.amount), note: tx.note,
         date: tx.date, paymentMethod: tx.payment_method, bankTransactionId: tx.bank_transaction_id,
       },
@@ -173,7 +182,7 @@ router.post('/transactions/:id/unassign', async (req, res) => {
     const { rows: [btx] } = await pool.query('SELECT * FROM bank_transactions WHERE id = $1 AND user_id = $2', [req.params.id, req.user.userId]);
     if (!btx) return res.status(404).json({ error: 'Not found' });
     if (btx.transaction_id) await pool.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [btx.transaction_id, req.user.userId]);
-    await pool.query('UPDATE bank_transactions SET envelope_id = NULL, transaction_id = NULL WHERE id = $1', [btx.id]);
+    await pool.query('UPDATE bank_transactions SET envelope_id = NULL, transaction_id = NULL, fixed_charge_id = NULL WHERE id = $1', [btx.id]);
     res.json({ ok: true, removedTransactionId: btx.transaction_id });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
