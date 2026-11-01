@@ -45,6 +45,11 @@ async function checkEnvelopeAlert(userId, envelopeId, expenseDate) {
            <p>Il reste <b>${eur(Math.max(0, remaining))}</b> pour encore ${daysLeft} jour(s), soit moins d'un ${tobaccoUnit(profile.tobacco_type)} à ${eur(packPrice)}.</p>`,
           { href: appUrl('/?page=envelopes'), label: 'Voir mes enveloppes' }
         ),
+        push: {
+          title: '🚬 Budget tabac épuisé',
+          body: `Il reste ${eur(Math.max(0, remaining))} pour ${daysLeft} jour(s).`,
+          url: '/?page=envelopes',
+        },
       }));
       return;
     }
@@ -63,6 +68,11 @@ async function checkEnvelopeAlert(userId, envelopeId, expenseDate) {
        <p>${remaining >= 0 ? `Il reste <b>${eur(remaining)}</b>` : `Dépassement de <b>${eur(-remaining)}</b>`} — encore ${daysLeft} jour(s) avant la fin du mois.</p>`,
       { href: appUrl('/?page=envelopes'), label: 'Voir mes enveloppes' }
     ),
+    push: {
+      title: level >= 100 ? `⚠️ ${env.name} dépassée` : `⚡ ${env.name} à ${pct} %`,
+      body: `${eur(spentNum)} / ${eur(budget)} · ${remaining >= 0 ? `reste ${eur(remaining)}` : `dépassement ${eur(-remaining)}`}`,
+      url: '/?page=envelopes',
+    },
   }));
 }
 

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { pushSupported, currentSubscription, enablePush, disablePush } from '../utils/push';
 import { ChevronRight, AlertTriangle, LogOut, Mail, Send } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { useAuth } from '../context/AuthContext';
@@ -283,6 +284,56 @@ function QuitTobacco({ profile, tobaccoEnv, dispatch }) {
   );
 }
 
+// Notifications push sur cet appareil (téléphone : app installée sur l'écran d'accueil)
+function PushToggle() {
+  const [on, setOn] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const supported = pushSupported();
+
+  useEffect(() => {
+    if (supported) currentSubscription().then(s => setOn(!!s)).catch(() => {});
+  }, [supported]);
+
+  async function toggle(v) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      if (v) {
+        await enablePush();
+        await api.post('/api/push/test');
+        setMsg({ ok: true, text: 'Notification de test envoyée ✅' });
+      } else {
+        await disablePush();
+      }
+      setOn(v);
+    } catch (err) {
+      setMsg({ ok: false, text: err.message });
+    }
+    setBusy(false);
+  }
+
+  if (!supported) {
+    return (
+      <p className="text-xs text-slate-400 py-3 border-b border-slate-50">
+        📱 Notifications : non disponibles dans ce navigateur. Sur iPhone, installe d'abord l'app
+        (Partager → « Sur l'écran d'accueil ») puis ouvre-la depuis l'icône.
+      </p>
+    );
+  }
+  return (
+    <>
+      <Toggle
+        label="📱 Notifications sur cet appareil"
+        sub="Mêmes alertes que par e-mail (enveloppes, fin de mois, bilan, banque), directement sur l'écran"
+        value={on}
+        onChange={v => !busy && toggle(v)}
+      />
+      {msg && <p className={`text-xs pb-2 ${msg.ok ? 'text-savings' : 'text-danger'}`}>{msg.text}</p>}
+    </>
+  );
+}
+
 function AlertsCard({ profile, dispatch }) {
   const [email, setEmail] = useState(profile.alertEmail || '');
   const [test, setTest] = useState(null);
@@ -300,14 +351,15 @@ function AlertsCard({ profile, dispatch }) {
 
   return (
     <div className="card">
-      <SectionTitle>Alertes & e-mails</SectionTitle>
+      <SectionTitle>Alertes & notifications</SectionTitle>
       {!profile.mailConfigured && (
         <p className="text-xs text-warn bg-warn/10 rounded-lg px-3 py-2 my-2">
           L'envoi d'e-mails n'est pas encore configuré sur le serveur (variables SMTP_* du fichier .env).
         </p>
       )}
+      <PushToggle />
       <Toggle
-        label="🔔 Alertes d'enveloppes par e-mail"
+        label="🔔 Alertes d'enveloppes"
         sub="Quand une enveloppe atteint le seuil, puis quand elle est dépassée. Tabac : quand il ne reste plus de quoi acheter un paquet."
         value={profile.alertsEnabled}
         onChange={v => update({ alertsEnabled: v })}

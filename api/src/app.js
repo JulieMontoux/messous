@@ -33,6 +33,7 @@ app.use('/api/ai', require('./routes/ai'));
 app.use('/api/withdrawals', require('./routes/withdrawals'));
 app.use('/api/bank', require('./routes/bank'));
 app.use('/api/advances', require('./routes/advances'));
+app.use('/api/push', require('./routes/push'));
 
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 

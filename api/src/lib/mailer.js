@@ -60,7 +60,8 @@ async function sendMail({ to, subject, html, text }) {
   return true;
 }
 
-// Envoie un e-mail une seule fois par (utilisateur, type, référence)
+// Notifie une seule fois par (utilisateur, type, référence) : e-mail (si SMTP configuré)
+// et notification push (si un appareil est abonné). build(recipient) → { subject, html, push? }
 async function sendOnce(userId, kind, ref, build) {
   const { rows } = await pool.query(
     'INSERT INTO email_log (user_id, kind, ref) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING user_id',
@@ -70,8 +71,15 @@ async function sendOnce(userId, kind, ref, build) {
   try {
     const recipient = await recipientFor(userId);
     if (!recipient) return false;
-    const mail = await build(recipient);
-    const sent = await sendMail({ to: recipient.email, ...mail });
+    const { push, ...mail } = await build(recipient);
+    const mailed = await sendMail({ to: recipient.email, ...mail });
+    // Chargé ici pour éviter une dépendance circulaire (push → db, mailer → db)
+    const pushed = await require('./push').sendPush(userId, {
+      title: push?.title || mail.subject,
+      body: push?.body || '',
+      url: push?.url || '/',
+    }).catch(err => { console.error('[push]', err.message); return 0; });
+    const sent = mailed || pushed > 0;
     if (!sent) await pool.query('DELETE FROM email_log WHERE user_id=$1 AND kind=$2 AND ref=$3', [userId, kind, ref]);
     return sent;
   } catch (err) {

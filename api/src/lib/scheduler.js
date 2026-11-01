@@ -30,6 +30,11 @@ async function monthEndReminders(now = new Date()) {
          <p>Sans ce relevé, l'historique n'affiche que l'épargne prévue.</p>`,
         { href: appUrl(`/?page=history&close=${month}`), label: 'Enregistrer mon épargne' }
       ),
+      push: {
+        title: `🐷 Dernier jour de ${MONTHS[now.getMonth()]}`,
+        body: 'Note ton épargne réelle et ce qu\'il reste sur le compte.',
+        url: `/?page=history&close=${month}`,
+      },
     }));
   }
 }
@@ -71,6 +76,11 @@ async function bankExpiryReminders(now = new Date()) {
          Banque → Connecter.</p>`,
         { href: appUrl('/?page=bank'), label: 'Reconnecter ma banque' }
       ),
+      push: {
+        title: `🏦 Connexion ${conn.bank_name || 'bancaire'} : J-${days}`,
+        body: 'Reconnecte ta banque pour continuer à récupérer tes paiements.',
+        url: '/?page=bank',
+      },
     }));
   }
 }

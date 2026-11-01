@@ -88,6 +88,11 @@ function renderMonthlyReport(r, firstName) {
        <table style="width:100%;font-size:14px;border-collapse:collapse;margin-top:8px">${rows}</table>`,
       { href: appUrl('/?page=history'), label: 'Voir mon historique' }
     ),
+    push: {
+      title: `📊 Bilan de ${monthLabel(r.month)}`,
+      body: `${eur(r.totalSpent)} dépensés sur ${eur(r.totalBudget)}${r.over.length ? ` · ${r.over.length} enveloppe(s) dépassée(s)` : ' · aucune enveloppe dépassée'}`,
+      url: '/?page=history',
+    },
   };
 }
 
