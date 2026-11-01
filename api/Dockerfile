@@ -1,8 +1,15 @@
-FROM node:20-alpine
+# Node 24 (LTS active) — Node 20 n'est plus maintenu depuis avril 2026
+FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+# Dépendances de production, puis on retire les outils inutiles à l'exécution (npm, npx,
+# corepack, yarn embarquent leurs propres dépendances et donc leurs propres CVE) et on
+# applique les correctifs de sécurité Alpine (OpenSSL…)
+RUN npm ci --omit=dev && npm cache clean --force \
+  && rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \
+            /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn* /root/.npm \
+  && apk upgrade --no-cache
 COPY src ./src
 # Pas de droits root dans le conteneur
 USER node
