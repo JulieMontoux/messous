@@ -3,6 +3,10 @@
 @tailwind utilities;
 
 @layer base {
+  /* Hauteur de la zone de l'indicateur d'accueil (iPhone), surchargeable dans les tests */
+  :root {
+    --sab: env(safe-area-inset-bottom, 0px);
+  }
   body {
     @apply bg-slate-50 text-slate-800 antialiased;
     font-family: 'Inter', system-ui, sans-serif;

@@ -12,7 +12,16 @@ function isConfigured() {
 
 function privateKey() {
   if (process.env.ENABLE_BANKING_PRIVATE_KEY) return process.env.ENABLE_BANKING_PRIVATE_KEY.replace(/\\n/g, '\n');
-  return fs.readFileSync(process.env.ENABLE_BANKING_KEY_PATH, 'utf8');
+  try {
+    return fs.readFileSync(process.env.ENABLE_BANKING_KEY_PATH, 'utf8');
+  } catch (err) {
+    if (err.code === 'EACCES') {
+      throw new Error(`Clé Enable Banking illisible (${process.env.ENABLE_BANKING_KEY_PATH}) : sur le serveur, `
+        + 'lancer « chown 1000:1000 secrets/enablebanking.pem && chmod 400 secrets/enablebanking.pem »');
+    }
+    if (err.code === 'ENOENT') throw new Error(`Clé Enable Banking introuvable : ${process.env.ENABLE_BANKING_KEY_PATH}`);
+    throw err;
+  }
 }
 
 function token() {
