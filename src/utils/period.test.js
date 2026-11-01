@@ -165,3 +165,14 @@ describe('mois de fin des charges fixes', () => {
     expect(monthsLeft({ amount: 1 }, '2026-10')).toBeNull();
   });
 });
+
+describe('retraits DAB détectés sur le relevé', () => {
+  it('ni « à classer » ni compté comme dépense carte', async () => {
+    const { isBankTodo } = await import('./budget');
+    const dab = { date: '2026-11-02', amount: -60, isCard: true, label: 'RETRAIT CB 0211', withdrawalId: 'w1', envelopeId: null, ignored: false };
+    expect(isBankTodo(dab)).toBe(false);
+    expect(isBankTodo({ ...dab, withdrawalId: null })).toBe(true);
+    const r = realSpending({ since: '2026-11-01', envelopes: [], transactions: [], bankTransactions: [dab] });
+    expect(r.total).toBe(0);
+  });
+});

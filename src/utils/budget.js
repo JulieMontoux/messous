@@ -170,14 +170,14 @@ export function realSpending({ transactions, envelopes, bankTransactions = [], s
   const cash = tx.filter(t => (t.paymentMethod || 'cash') === 'cash').reduce((s, t) => s + Number(t.amount), 0);
   const cardClassified = tx.filter(t => t.paymentMethod === 'card').reduce((s, t) => s + Number(t.amount), 0);
   const unclassified = bankTransactions
-    .filter(b => b.date >= since && b.amount < 0 && b.isCard && !b.ignored && !b.envelopeId && !b.fixedChargeId)
+    .filter(b => b.date >= since && b.amount < 0 && b.isCard && !b.ignored && !b.envelopeId && !b.fixedChargeId && !b.withdrawalId)
     .reduce((s, b) => s + Math.abs(b.amount), 0);
   return { cash, cardClassified, unclassified, total: cash + cardClassified + unclassified };
 }
 
 // Opération bancaire à classer : paiement carte ou prélèvement, ni classé ni ignoré
 export function isBankTodo(b) {
-  return b.amount < 0 && !b.ignored && !b.envelopeId && !b.fixedChargeId
+  return b.amount < 0 && !b.ignored && !b.envelopeId && !b.fixedChargeId && !b.withdrawalId
     && (b.isCard || /PRLV|PRELEV/i.test(b.label || ''));
 }
 

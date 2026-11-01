@@ -14,6 +14,23 @@ services:
       timeout: 5s
       retries: 10
 
+  # Sauvegarde quotidienne de la base dans ./backups (30 jours conservés)
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+      TZ: ${TZ:-Europe/Paris}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+    volumes:
+      - ./backups:/backups
+      - ./deploy/backup/backup-loop.sh:/backup-loop.sh:ro
+    entrypoint: ["/bin/sh", "/backup-loop.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+
   ollama:
     image: ollama/ollama
     restart: unless-stopped

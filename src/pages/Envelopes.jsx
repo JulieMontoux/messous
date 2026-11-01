@@ -443,7 +443,10 @@ function WithdrawalsCard({ withdrawals, onDelete }) {
       <div className="divide-y divide-slate-50">
         {withdrawals.slice(0, 5).map(w => (
           <div key={w.id} className="flex items-center justify-between py-1.5 text-sm">
-            <span className="text-slate-600">{formatDay(w.date, { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+            <span className="text-slate-600">
+              {formatDay(w.date, { weekday: 'short', day: 'numeric', month: 'short' })}
+              {w.bankTransactionId && <span className="text-[10px] text-slate-400 ml-1.5" title="Retrouvé sur le relevé bancaire">🏦 banque</span>}
+            </span>
             <span className="flex items-center gap-2">
               {w.suggestedAmount != null && w.suggestedAmount !== w.amount && (
                 <span className="text-xs text-slate-400">conseillé {fmt(w.suggestedAmount)}</span>

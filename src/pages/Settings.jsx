@@ -82,6 +82,60 @@ function TobaccoCard({ profile, envelopes, dispatch }) {
   );
 }
 
+// Suppression réelle de toutes les données côté serveur (compte conservé), après mot de passe
+function ResetModal({ onClose, onDone }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ready = password && confirm.trim().toUpperCase() === 'SUPPRIMER';
+
+  async function submit() {
+    setBusy(true);
+    setError('');
+    try {
+      await api.post('/api/profile/reset', { password });
+      onDone();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title="⚠️ Réinitialiser toutes les données ?"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>Annuler</button>
+          <button className="btn-danger" disabled={!ready || busy} onClick={submit}>
+            {busy ? 'Suppression…' : 'Tout supprimer'}
+          </button>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-600">
+        Supprime définitivement sur le serveur : profil, charges, enveloppes, dépenses, retraits, historique,
+        objectifs, opérations et connexions bancaires. Ton compte (e-mail et mot de passe) est conservé et tu repars
+        de l'écran de démarrage.
+      </p>
+      <p className="text-xs text-slate-500">
+        Les sauvegardes quotidiennes du serveur permettent de revenir en arrière (voir README → Restaurer).
+      </p>
+      <div>
+        <label className="label">Ton mot de passe</label>
+        <input className="input" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} />
+      </div>
+      <div>
+        <label className="label">Tape SUPPRIMER pour confirmer</label>
+        <input className="input" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="SUPPRIMER" />
+      </div>
+      {error && <p className="text-sm text-danger">{error}</p>}
+    </Modal>
+  );
+}
+
 function AlertsCard({ profile, dispatch }) {
   const [email, setEmail] = useState(profile.alertEmail || '');
   const [test, setTest] = useState(null);
@@ -349,28 +403,7 @@ export default function Settings() {
       )}
 
       {/* Reset confirmation */}
-      {resetModal && (
-        <Modal
-          title="⚠️ Réinitialiser les données ?"
-          onClose={() => setResetModal(false)}
-          footer={
-            <>
-              <button className="btn-secondary" onClick={() => setResetModal(false)}>Annuler</button>
-              <button
-                className="btn-danger"
-                onClick={() => { dispatch({ type: 'RESET' }); setResetModal(false); }}
-              >
-                Oui, tout supprimer
-              </button>
-            </>
-          }
-        >
-          <p className="text-sm text-slate-600">
-            Cette action supprimera définitivement toutes tes données : profil, charges, enveloppes et historique de dépenses.
-          </p>
-          <p className="text-sm font-semibold text-danger mt-2">Cette action est irréversible.</p>
-        </Modal>
-      )}
+      {resetModal && <ResetModal onClose={() => setResetModal(false)} onDone={() => { setResetModal(false); dispatch({ type: 'RESET' }); }} />}
     </div>
   );
 }

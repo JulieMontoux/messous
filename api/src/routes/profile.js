@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { pool } = require('../db');
 const auth = require('../middleware/auth');
+const bcrypt = require('bcryptjs');
 const { sendMail, layout, isMailConfigured, recipientFor } = require('../lib/mailer');
 
 router.use(auth);
@@ -90,6 +91,36 @@ router.post('/test-email', async (req, res) => {
     });
     res.json({ ok: true, to: recipient.email });
   } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// Réinitialisation complète des données (le compte est conservé). Mot de passe exigé.
+router.post('/reset', async (req, res) => {
+  const userId = req.user.userId;
+  const client = await pool.connect();
+  try {
+    const { password } = req.body;
+    const { rows: [user] } = await client.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+    if (!user || !password || !(await bcrypt.compare(password, user.password_hash))) {
+      return res.status(403).json({ error: 'Mot de passe incorrect' });
+    }
+    await client.query('BEGIN');
+    for (const table of [
+      'bank_rules', 'bank_transactions', 'bank_accounts', 'bank_connections', 'withdrawals',
+      'recurring_transactions', 'transactions', 'envelopes', 'fixed_charges', 'savings_history',
+      'savings_goals', 'ai_suggestions', 'email_log', 'profiles',
+    ]) {
+      await client.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
+    }
+    await client.query('INSERT INTO profiles (user_id) VALUES ($1)', [userId]);
+    await client.query("UPDATE settings SET view_mode = 'monthly' WHERE user_id = $1", [userId]);
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
 });
 
 module.exports = router;

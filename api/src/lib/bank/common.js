@@ -2,6 +2,13 @@ const crypto = require('crypto');
 
 const CARD_RE = /(^|\b)(CB|CARTE|PAIEMENT PAR CARTE|PAIEMENT CB|ACHAT CB|FACTURE CARTE|CARD|VISA|MASTERCARD)(\b|\*)/i;
 
+// Retrait d'espèces au distributeur
+const CASH_RE = /RETRAIT\s*(DAB|GAB|CB|ESP|ESPECES|DISTRIBUTEUR)|\b(DAB|GAB|ATM)\b|CASH WITHDRAWAL/i;
+
+function isCashWithdrawalLabel(label) {
+  return CASH_RE.test(label || '');
+}
+
 function isCardLabel(label, code = '') {
   return CARD_RE.test(label || '') || /card|carte|POSD|CCRD/i.test(code || '');
 }
@@ -26,4 +33,4 @@ function hashId(...parts) {
   return crypto.createHash('sha1').update(parts.join('|')).digest('hex');
 }
 
-module.exports = { isCardLabel, merchantKey, hashId };
+module.exports = { isCardLabel, isCashWithdrawalLabel, merchantKey, hashId };

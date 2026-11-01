@@ -49,6 +49,9 @@ function reducer(state, action) {
     case 'SET_BANK_TRANSACTIONS':
       return { ...state, bankTransactions: action.payload };
 
+    case 'SET_WITHDRAWALS':
+      return { ...state, withdrawals: action.payload };
+
     case 'SET_FIXED_CHARGES':
       return { ...state, fixedCharges: action.payload };
 

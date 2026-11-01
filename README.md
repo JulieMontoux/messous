@@ -12,7 +12,8 @@ paiements carte, objectifs d'épargne et historique.
 | Fonction | Où |
 |---|---|
 | **Retraits d'espèces** : montant conseillé, enregistrement de la date et du montant réellement retiré, écart avec le conseillé. La semaine budgétaire démarre le jour du dernier retrait (cycles de 7 jours) au lieu du lundi. Les espèces encore en poche sont déduites du prochain retrait. | Enveloppes → *Retrait* |
-| **Banque** : connexion DSP2 (Enable Banking) ou import CSV, paiements carte en temps réel, classement dans les enveloppes, règles « toujours pour ce marchand », synchro auto toutes les 6 h | Banque |
+| **Banque** : connexion DSP2 (Enable Banking) ou import CSV (depuis le 1er du mois dernier), paiements carte en temps réel, classement unitaire ou en masse dans les enveloppes ou les charges fixes, règles « toujours pour ce marchand », synchro auto toutes les 6 h | Banque |
+| **Retraits DAB détectés** sur le relevé et enregistrés comme retraits d'espèces (un retrait déjà saisi à la main, même montant à 3 jours près, est simplement rattaché) | Banque, Enveloppes |
 | **Dépenses en temps réel** : espèces + carte classée + carte à classer, avec une prévision de fin de mois qui reste indicative tant que le mois n'est pas terminé (seul un dépassement réel s'affiche en rouge) | Tableau de bord, Enveloppes |
 | **Clôture du mois** : épargne réellement versée + reste réel, qu'on peut verser sur un objectif ; l'historique compare le prévu au réel | Historique |
 | **E-mail du dernier jour du mois** (à 18 h) pour enregistrer l'épargne réelle | automatique |
@@ -55,6 +56,17 @@ Le front embarque un identifiant de version ; les onglets ouverts détectent le 
 - Intervalle : `INTERVAL=5min sudo ./deploy/proxmox/install.sh`
 
 Pour un conteneur LXC, Docker nécessite les options `nesting=1` (et `keyctl=1` en non privilégié).
+
+### Sauvegardes
+
+Le service `backup` (lancé avec `docker compose up -d`) sauvegarde la base **chaque jour à 3 h** et au démarrage,
+dans `./backups/messous-AAAA-MM-JJ_HHMM.dump`. Les fichiers de plus de 30 jours sont supprimés
+(`BACKUP_HOUR` et `BACKUP_KEEP_DAYS` dans `.env`).
+
+- Vérifier : `ls -lh backups/` et `docker compose logs backup`
+- Restaurer : `./deploy/backup/restore.sh backups/messous-2026-11-01_0300.dump`
+  (demande confirmation et sauvegarde d'abord l'état actuel dans `backups/avant-restauration-…`)
+- Pour une copie hors du serveur, active aussi la sauvegarde Proxmox du conteneur (Datacenter → Sauvegarde).
 
 ### E-mails
 

@@ -39,6 +39,7 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onA
 
   function classify() {
     if (target === 'new-fix') return onCreateCharge(b, remember);
+    if (target === 'cash') return onAssign(b, { asWithdrawal: true }, false);
     const [kind, id] = target.split(':');
     onAssign(b, kind === 'fix' ? { fixedChargeId: id } : { envelopeId: id }, remember);
   }
@@ -68,9 +69,11 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onA
       </div>
 
       {debit && !b.ignored && (
-        env || charge ? (
+        env || charge || b.withdrawalId ? (
           <div className="flex items-center gap-2 mt-2">
-            {env
+            {b.withdrawalId
+              ? <span className="text-xs bg-savings/10 text-savings font-medium px-2 py-1 rounded-full">💶 Retrait d'espèces</span>
+              : env
               ? <span className="text-xs bg-primary/10 text-primary font-medium px-2 py-1 rounded-full">{env.icon || ''} {env.name}</span>
               : <span className="text-xs bg-fixed/10 text-fixed-dark font-medium px-2 py-1 rounded-full">📌 {charge.name}{FREQ_LABEL[charge.frequency] || ''}</span>}
             <button onClick={() => onUnassign(b)} className="text-xs text-slate-400 hover:text-danger flex items-center gap-0.5">
@@ -90,6 +93,7 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onA
                 {fixedCharges.filter(c => isChargeActive(c)).map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
                 <option value="new-fix">＋ Nouvelle charge fixe…</option>
               </optgroup>
+              <option value="cash">💶 Retrait d'espèces</option>
             </select>
             <label className="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer">
               <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
@@ -145,6 +149,7 @@ function BulkBar({ count, total, envelopes, fixedCharges, onApply, onClear }) {
               {fixedCharges.filter(c => isChargeActive(c)).map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
             </optgroup>
           )}
+          <option value="cash">💶 Retrait d'espèces</option>
         </select>
         <label className="flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
           <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
@@ -339,9 +344,10 @@ export default function Bank({ params = {} }) {
   }
 
   async function refresh() {
-    const [bank, txs] = await Promise.all([fetchBankTransactions(), api.get('/api/transactions')]);
+    const [bank, txs, withdrawals] = await Promise.all([fetchBankTransactions(), api.get('/api/transactions'), api.get('/api/withdrawals')]);
     dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bank });
     dispatch({ type: 'SET_TRANSACTIONS', payload: txs });
+    dispatch({ type: 'SET_WITHDRAWALS', payload: withdrawals });
     await loadStatus();
   }
 
@@ -352,7 +358,11 @@ export default function Bank({ params = {} }) {
     try {
       const r = await api.post('/api/bank/sync');
       await refresh();
-      setMessage({ ok: true, text: `${r.inserted} nouvelle(s) opération(s), ${r.assigned} classée(s) automatiquement.` });
+      setMessage({
+        ok: true,
+        text: `${r.inserted} nouvelle(s) opération(s), ${r.assigned} classée(s) automatiquement`
+          + (r.withdrawals ? `, ${r.withdrawals} retrait(s) d'espèces enregistré(s).` : '.'),
+      });
     } catch (err) {
       setMessage({ ok: false, text: err.message });
     }
@@ -367,7 +377,7 @@ export default function Bank({ params = {} }) {
   async function assign(b, target, remember) {
     try {
       const { transaction } = await api.post(`/api/bank/transactions/${b.id}/assign`, { ...target, remember });
-      if (remember) {
+      if (remember || target.asWithdrawal) {
         await refresh();
       } else {
         dispatch({
@@ -402,6 +412,7 @@ export default function Bank({ params = {} }) {
     dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bankTransactions.map(x => x.id === b.id ? { ...x, envelopeId: null, fixedChargeId: null, transactionId: null } : x) });
     dispatch({ type: 'SET_TRANSACTIONS', payload: transactions.filter(t => t.id !== b.transactionId) });
     if (b.fixedChargeId) await reloadCharges();
+    if (b.withdrawalId) await refresh();
   }
 
   function toggle(id) {
@@ -416,6 +427,7 @@ export default function Bank({ params = {} }) {
     const ids = [...selected];
     const [kind, id] = action.split(':');
     const body = action === 'ignore' ? { ids, ignore: true }
+      : action === 'cash' ? { ids, asWithdrawal: true }
       : kind === 'fix' ? { ids, fixedChargeId: id, remember } : { ids, envelopeId: id, remember };
     try {
       const r = await api.post('/api/bank/transactions/bulk', body);
@@ -430,6 +442,7 @@ export default function Bank({ params = {} }) {
 
   async function ignore(b, ignored) {
     await api.post(`/api/bank/transactions/${b.id}/ignore`, { ignored });
+    if (b.withdrawalId) return refresh();
     dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bankTransactions.map(x => x.id === b.id ? { ...x, ignored } : x) });
   }
 
@@ -655,6 +668,7 @@ export default function Bank({ params = {} }) {
             setMessage({
               ok: true,
               text: `${r.parsed} ligne(s) lue(s), ${r.inserted} nouvelle(s), ${r.assigned} classée(s) automatiquement`
+                + (r.withdrawals ? `, ${r.withdrawals} retrait(s) d'espèces enregistré(s)` : '')
                 + (r.skipped ? ` · ${r.skipped} antérieure(s) au ${formatDay(r.from, { day: 'numeric', month: 'long' })} ignorée(s).` : '.'),
             });
           }}

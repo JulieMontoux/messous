@@ -11,6 +11,8 @@ const toClient = r => ({
   suggestedAmount: r.suggested_amount != null ? Number(r.suggested_amount) : null,
   mode: r.mode,
   note: r.note,
+  source: r.source || 'manual',
+  bankTransactionId: r.bank_transaction_id || null,
 });
 
 router.get('/', async (req, res) => {
