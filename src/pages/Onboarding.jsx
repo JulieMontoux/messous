@@ -100,8 +100,11 @@ export default function Onboarding() {
     setStep(s => Math.max(0, s - 1));
   }
 
-  function finish() {
-    dispatch({
+  const [saving, setSaving] = useState(false);
+
+  async function finish() {
+    setSaving(true);
+    await dispatch({
       type: 'COMPLETE_ONBOARDING',
       payload: {
         profile: { ...profile, netSalary: Number(profile.netSalary) || 0 },
@@ -415,9 +418,10 @@ export default function Onboarding() {
           ) : (
             <button
               onClick={finish}
+              disabled={saving}
               className="btn-primary flex-1 flex items-center justify-center gap-2"
             >
-              <Check size={18} /> C'est parti !
+              <Check size={18} /> {saving ? 'Enregistrement…' : "C'est parti !"}
             </button>
           )}
         </div>

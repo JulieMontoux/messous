@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act, renderHook, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { api, fetchAll, fetchBankTransactions } from '../api/client';
+import { api, fetchAll, fetchBankTransactions, retryDelay } from '../api/client';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { BudgetProvider, useBudget } from '../context/BudgetContext';
 import { useTheme } from '../hooks/useTheme';
@@ -44,6 +44,34 @@ describe('client API', () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 400, json: async () => ({}) })));
     await expect(api.delete('/api/x')).rejects.toThrow('Erreur serveur');
   });
+
+  it('429 / 503 passager : nouvel essai automatique ; blocage long : erreur directe', async () => {
+    const res = (status, retryAfter) => ({
+      ok: status < 400, status,
+      headers: { get: name => (name === 'Retry-After' ? retryAfter : null) },
+      json: async () => (status < 400 ? { ok: true } : { error: 'Trop de tentatives. Réessaie dans 15 min.' }),
+    });
+    // Proxy qui refuse deux fois puis accepte
+    let n = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => (++n <= 2 ? { ...res(429, null), json: async () => { throw new Error('html'); } } : res(200))));
+    await expect(api.post('/api/charges', {})).resolves.toEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledTimes(3);
+
+    // Toujours refusé : 3 nouveaux essais puis message clair
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ...res(429, '0'), json: async () => { throw new Error('html'); } })));
+    await expect(api.get('/api/x')).rejects.toThrow('Trop de requêtes envoyées au serveur (429)');
+    expect(fetch).toHaveBeenCalledTimes(4);
+
+    // Blocage de connexion (Retry-After en minutes) : pas de nouvel essai
+    vi.stubGlobal('fetch', vi.fn(async () => res(429, '900')));
+    await expect(api.post('/api/auth/login', {})).rejects.toThrow('Trop de tentatives');
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    expect(retryDelay(res(503, '2'), 0)).toBe(2000);
+    expect(retryDelay(res(503, 'abc'), 1)).toBe(800);
+    expect(retryDelay(res(500, null), 0)).toBeNull();
+    expect(retryDelay({ status: 429 }, 0)).toBe(400);
+  }, 15000);
 
   it('téléchargement d\'un export', async () => {
     installFakeApi();
@@ -139,6 +167,40 @@ describe('état du budget', () => {
     expect(result.current.state.profile.firstName).toBe('Local');
     await d({ type: 'RESET' });
     expect(result.current.state.envelopes).toEqual([]);
+  });
+
+  it('démarrage : enregistré un par un, un refus n\'empêche pas le reste et est signalé', async () => {
+    const fake = installFakeApi();
+    const { result } = renderHook(() => useBudget(), { wrapper });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const normal = fake.fetch.getMockImplementation();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let refused = false;
+    fake.fetch.mockImplementation(async (url, opts = {}) => {
+      if (opts.method === 'POST' && /\/api\/charges$/.test(url) && !refused) {
+        refused = true;
+        return { ok: false, status: 500, json: async () => ({ error: 'refusé' }) };
+      }
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise(r => setTimeout(r, 1));
+      inFlight -= 1;
+      return normal(url, opts);
+    });
+    const onErr = vi.fn();
+    window.addEventListener('messous:sync-error', onErr);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const charges = [{ id: 'c1', name: 'A', amount: 1 }, { id: 'c2', name: 'B', amount: 2 }];
+    const envelopes = [{ id: 'e1', name: 'X' }, { id: 'e2', name: 'Y' }];
+    const before = fake.fetch.mock.calls.length;
+    await act(() => result.current.dispatch({ type: 'COMPLETE_ONBOARDING', payload: { profile: { firstName: 'Z' }, fixedCharges: charges, envelopes } }));
+    await waitFor(() => expect(onErr).toHaveBeenCalled());
+    window.removeEventListener('messous:sync-error', onErr);
+    expect(onErr.mock.calls[0][0].detail).toMatch(/1 élément\(s\) du démarrage non enregistré/);
+    const posts = fake.fetch.mock.calls.slice(before).filter(([, o]) => o?.method === 'POST').map(([u]) => u);
+    expect(posts).toEqual(['/api/charges', '/api/charges', '/api/envelopes', '/api/envelopes']);
+    expect(maxInFlight).toBe(1);
   });
 
   it('échec d\'enregistrement : bandeau d\'erreur ; échec de chargement : erreur puis rechargement', async () => {

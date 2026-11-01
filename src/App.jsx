@@ -5,6 +5,7 @@ import { useBudget } from './context/BudgetContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import { ForgotPassword, ResetPassword, readResetToken } from './pages/PasswordReset';
 import Onboarding from './pages/Onboarding';
 import Dashboard from './pages/Dashboard';
 import Charges from './pages/Charges';
@@ -230,6 +231,8 @@ function BudgetApp() {
 function App() {
   const { isAuthenticated } = useAuth();
   const [authMode, setAuthMode] = useState('login');
+  // Lien « mot de passe oublié » reçu par e-mail : prioritaire sur tout le reste
+  const [resetToken, setResetToken] = useState(readResetToken);
 
   // Après une connexion, l'écran à afficher en cas de déconnexion redevient « connexion »
   // (et non l'inscription) — ajustement d'état pendant le rendu, sans effet
@@ -239,10 +242,20 @@ function App() {
     if (isAuthenticated) setAuthMode('login');
   }
 
+  if (resetToken) {
+    return (
+      <ResetPassword
+        token={resetToken}
+        onDone={() => setResetToken(null)}
+        onCancel={() => { setResetToken(null); setAuthMode('login'); }}
+      />
+    );
+  }
+
   if (!isAuthenticated) {
-    return authMode === 'login'
-      ? <Login onSwitch={() => setAuthMode('register')} />
-      : <Register onSwitch={() => setAuthMode('login')} />;
+    if (authMode === 'register') return <Register onSwitch={() => setAuthMode('login')} />;
+    if (authMode === 'forgot') return <ForgotPassword onBack={() => setAuthMode('login')} />;
+    return <Login onSwitch={() => setAuthMode('register')} onForgot={() => setAuthMode('forgot')} />;
   }
 
   return (

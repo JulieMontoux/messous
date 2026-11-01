@@ -25,7 +25,9 @@ function appUrl(path = '') {
   return `${(process.env.APP_URL || '').replace(/\/$/, '')}${path}`;
 }
 
-function layout(title, body, cta) {
+const NOTIF_FOOTER = 'Tu reçois cet e-mail car les notifications sont activées dans ton profil MesSous.';
+
+function layout(title, body, cta, footer = NOTIF_FOOTER) {
   const button = cta
     ? `<p style="margin:24px 0"><a href="${cta.href}" style="background:#6366f1;color:#fff;text-decoration:none;padding:12px 20px;border-radius:12px;font-weight:600">${cta.label}</a></p>`
     : '';
@@ -37,7 +39,7 @@ function layout(title, body, cta) {
       ${body}
       ${button}
     </div>
-    <p style="font-size:11px;color:#94a3b8;margin-top:16px">Tu reçois cet e-mail car les notifications sont activées dans ton profil MesSous.</p>
+    <p style="font-size:11px;color:#94a3b8;margin-top:16px">${footer}</p>
   </div></body></html>`;
 }
 

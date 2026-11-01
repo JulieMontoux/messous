@@ -2,22 +2,44 @@ function getToken() {
   return localStorage.getItem('messous_token');
 }
 
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const MAX_RETRIES = 3;
+
+// 429 (trop de requêtes) ou 503 passager, par exemple renvoyé par un proxy placé devant l'app :
+// on réessaie après une courte attente. Une attente longue (ex. blocage après des mots de passe
+// erronés, Retry-After en minutes) n'est pas réessayée : l'erreur est affichée.
+export function retryDelay(res, attempt) {
+  if (![429, 503].includes(res.status) || attempt >= MAX_RETRIES) return null;
+  const header = res.headers?.get?.('Retry-After');
+  const seconds = header == null ? NaN : Number(header);
+  const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 400 * 2 ** attempt;
+  return delay <= 5000 ? delay : null;
+}
+
 async function request(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   const token = getToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(path, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(path, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const delay = retryDelay(res, attempt);
+    if (delay == null) break;
+    await sleep(delay);
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({
       error: res.status >= 502 && res.status <= 504
         ? `Serveur injoignable (${res.status}) — l'API ne répond pas`
-        : `Erreur serveur (${res.status})`,
+        : res.status === 429
+          ? 'Trop de requêtes envoyées au serveur (429) — réessaie dans un instant'
+          : `Erreur serveur (${res.status})`,
     }));
     if (res.status === 401) {
       localStorage.removeItem('messous_token');
@@ -47,7 +69,7 @@ export const api = {
   get: (path) => request('GET', path),
   put: (path, body) => request('PUT', path, body),
   patch: (path, body) => request('PATCH', path, body),
-  delete: (path) => request('DELETE', path),
+  delete: (path, body) => request('DELETE', path, body),
 };
 
 export const DEFAULT_PROFILE = {

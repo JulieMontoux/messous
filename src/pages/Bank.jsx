@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Upload, Link2, Trash2, CreditCard, EyeOff, Eye, X, Landmark, Search, Sparkles, Check } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
-import { api, fetchBankTransactions } from '../api/client';
+import { api } from '../api/client';
 import { fmt, fmtDec, realSpending, isBankTodo as isTodo, chargeFromForm, isChargeActive } from '../utils/budget';
 import { blankCharge, generateId } from '../data/defaults';
 import ChargeForm from '../components/ChargeForm';
@@ -381,17 +381,39 @@ export default function Bank({ params = {} }) {
   const [connectOpen, setConnectOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
+  const [statusError, setStatusError] = useState('');
+
+  // L'état de la banque (connexions, connecteur configuré) décide des boutons « Connecter » et
+  // « Synchroniser » : une erreur s'affiche au lieu de les faire disparaître sans explication.
   async function loadStatus() {
-    setStatus(await api.get('/api/bank/status').catch(() => ({ providerConfigured: false, connections: [], accounts: [], rules: [] })));
+    try {
+      setStatus(await api.get('/api/bank/status'));
+      setStatusError('');
+    } catch (err) {
+      setStatus(prev => prev || { providerConfigured: false, connections: [], accounts: [], rules: [] });
+      setStatusError(err.message);
+    }
   }
 
+  async function loadOperations() {
+    try {
+      const [bank, txs, withdrawals] = await Promise.all([api.get('/api/bank/transactions'), api.get('/api/transactions'), api.get('/api/withdrawals')]);
+      dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bank });
+      dispatch({ type: 'SET_TRANSACTIONS', payload: txs });
+      dispatch({ type: 'SET_WITHDRAWALS', payload: withdrawals });
+      dispatch({ type: 'SET_ADVANCES', payload: await api.get('/api/advances').catch(() => []) });
+      return true;
+    } catch (err) {
+      setMessage({ ok: false, text: `Opérations non rechargées : ${err.message}` });
+      return false;
+    }
+  }
+
+  // Chargements indépendants : l'un qui échoue n'empêche pas l'autre
+  // Renvoie false si les opérations n'ont pas pu être rechargées (le message d'erreur est déjà affiché)
   async function refresh() {
-    const [bank, txs, withdrawals] = await Promise.all([fetchBankTransactions(), api.get('/api/transactions'), api.get('/api/withdrawals')]);
-    dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bank });
-    dispatch({ type: 'SET_TRANSACTIONS', payload: txs });
-    dispatch({ type: 'SET_WITHDRAWALS', payload: withdrawals });
-    dispatch({ type: 'SET_ADVANCES', payload: await api.get('/api/advances').catch(() => []) });
-    await loadStatus();
+    const [ok] = await Promise.all([loadOperations(), loadStatus()]);
+    return ok;
   }
 
   useEffect(() => { refresh(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -400,7 +422,7 @@ export default function Bank({ params = {} }) {
     setSyncing(true);
     try {
       const r = await api.post('/api/bank/sync');
-      await refresh();
+      if (!(await refresh())) return;
       setMessage({
         ok: true,
         text: `${r.inserted} nouvelle(s) opération(s), ${r.assigned} classée(s) automatiquement`
@@ -408,8 +430,9 @@ export default function Bank({ params = {} }) {
       });
     } catch (err) {
       setMessage({ ok: false, text: err.message });
+    } finally {
+      setSyncing(false);
     }
-    setSyncing(false);
   }
 
   async function reloadCharges() {
@@ -578,6 +601,13 @@ export default function Bank({ params = {} }) {
           </button>
         )}
       </PageHeader>
+
+      {statusError && (
+        <div className="text-sm rounded-xl px-4 py-3 flex items-start justify-between gap-3 bg-danger/10 text-danger">
+          <span>Impossible de lire l'état de la banque ({statusError}) : connexion et synchronisation indisponibles pour l'instant.</span>
+          <button onClick={loadStatus} className="font-semibold whitespace-nowrap underline">Réessayer</button>
+        </div>
+      )}
 
       {message && (
         <div className={cn('text-sm rounded-xl px-4 py-3 flex items-start justify-between gap-3', message.ok ? 'bg-savings/10 text-savings' : 'bg-danger/10 text-danger')}>

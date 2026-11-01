@@ -7,9 +7,12 @@ let seq = 0;
 const newId = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
 
 function jsonResponse(status, body) {
+  // Comme l'API réelle : un 429 indique une attente longue (pas de nouvel essai automatique)
+  const headers = { 'Retry-After': status === 429 ? '3600' : null };
   return {
     ok: status < 400,
     status,
+    headers: { get: name => headers[name] ?? null },
     json: async () => {
       if (body === undefined) throw new Error('pas de JSON');
       return JSON.parse(JSON.stringify(body));
@@ -101,8 +104,8 @@ export function installFakeApi(overrides = {}) {
   on('DELETE', /^\/api\/advances\/([^/]+)$/, (b, [, id]) => { db.advances = db.advances.filter(a => a.id !== id); return { ok: true }; });
 
   // Banque
-  on('GET', /^\/api\/bank\/status$/, () => db.bankStatus);
-  on('GET', /^\/api\/bank\/transactions/, () => db.bankTransactions);
+  on('GET', /^\/api\/bank\/status$/, () => (db.statusError ? [500, { error: db.statusError }] : db.bankStatus));
+  on('GET', /^\/api\/bank\/transactions/, () => (db.opsError ? [500, { error: db.opsError }] : db.bankTransactions));
   on('GET', /^\/api\/bank\/banks$/, () => (db.banksError ? [502, { error: db.banksError }] : db.banks));
   on('POST', /^\/api\/bank\/connect$/, () => (db.connectError ? [502, { error: db.connectError }] : { url: 'about:blank#banque' }));
   on('POST', /^\/api\/bank\/sync$/, () => (db.syncError ? [502, { error: db.syncError }] : { inserted: 2, assigned: 1, withdrawals: 1 }));
@@ -155,6 +158,10 @@ export function installFakeApi(overrides = {}) {
   on('GET', /^\/api\/export\/(\w+)\.csv$/, () => (db.exportError ? [500, { error: 'panne' }] : 'Date;Montant\n'));
   on('POST', /^\/api\/auth\/login$/, b => (b.password === 'motdepasse1' ? { token: 'jeton', user: { email: b.email } } : [401, { error: 'Email ou mot de passe incorrect' }]));
   on('POST', /^\/api\/auth\/register$/, b => (db.registerError ? [409, { error: db.registerError }] : { token: 'jeton', user: { email: b.email } }));
+  on('POST', /^\/api\/auth\/forgot$/, () => (db.forgotError ? [429, { error: db.forgotError }] : { ok: true }));
+  on('POST', /^\/api\/auth\/reset$/, b => (b.token === 'bon-jeton' ? { token: 'jeton-reset', user: { email: 'julie@exemple.fr' } } : [400, { error: 'Lien invalide ou expiré : refais une demande.' }]));
+  on('PUT', /^\/api\/auth\/password$/, b => (b.currentPassword === 'motdepasse1' ? { token: 'jeton-nouveau', user: { email: 'julie@exemple.fr' } } : [403, { error: 'Mot de passe actuel incorrect' }]));
+  on('DELETE', /^\/api\/auth\/account$/, b => (b.password === 'motdepasse1' ? { ok: true } : [403, { error: 'Mot de passe incorrect' }]));
   on('GET', /^\/version\.json/, () => ({ version: db.serverVersion || 'dev' }));
 
   const fetchMock = vi.fn(async (url, opts = {}) => {

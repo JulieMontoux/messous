@@ -12,18 +12,28 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('messous:logout', handler);
   }, []);
 
-  async function login(email, password) {
-    const data = await api.post('/api/auth/login', { email, password });
+  function startSession(data) {
     localStorage.setItem('messous_token', data.token);
     setToken(data.token);
     return data;
   }
 
+  async function login(email, password) {
+    return startSession(await api.post('/api/auth/login', { email, password }));
+  }
+
   async function register(email, password) {
-    const data = await api.post('/api/auth/register', { email, password });
-    localStorage.setItem('messous_token', data.token);
-    setToken(data.token);
-    return data;
+    return startSession(await api.post('/api/auth/register', { email, password }));
+  }
+
+  // Lien « mot de passe oublié » : nouveau mot de passe puis connexion directe
+  async function resetPassword(resetToken, password) {
+    return startSession(await api.post('/api/auth/reset', { token: resetToken, password }));
+  }
+
+  // Le serveur renvoie un nouveau jeton (les autres appareils sont déconnectés)
+  async function changePassword(currentPassword, newPassword) {
+    return startSession(await api.put('/api/auth/password', { currentPassword, newPassword }));
   }
 
   function logout() {
@@ -31,8 +41,13 @@ export function AuthProvider({ children }) {
     setToken(null);
   }
 
+  async function deleteAccount(password) {
+    await api.delete('/api/auth/account', { password });
+    logout();
+  }
+
   return (
-    <AuthContext.Provider value={{ token, login, register, logout, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ token, login, register, logout, resetPassword, changePassword, deleteAccount, isAuthenticated: !!token }}>
       {children}
     </AuthContext.Provider>
   );

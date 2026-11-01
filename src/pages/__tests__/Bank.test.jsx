@@ -25,6 +25,28 @@ describe('Banque', () => {
     expect(screen.getByText(/Dernière synchro/)).toBeInTheDocument();
   });
 
+  it('état de la banque en erreur : message visible et nouvel essai, au lieu de boutons qui disparaissent', async () => {
+    const { user, fake } = await renderPage(Bank, { api: { statusError: 'panne base' } });
+    expect(await screen.findByText(/Impossible de lire l'état de la banque \(.*panne base.*\)/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Synchroniser/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /CSV/ })).toBeInTheDocument();
+    delete fake.db.statusError;
+    await user.click(screen.getByRole('button', { name: 'Réessayer' }));
+    await loaded();
+    expect(screen.getByRole('button', { name: /Connecter/ })).toBeInTheDocument();
+    expect(screen.queryByText(/Impossible de lire l'état de la banque/)).not.toBeInTheDocument();
+  });
+
+  it('opérations non rechargées : les boutons restent et une erreur s\'affiche', async () => {
+    const { user, fake } = await renderPage(Bank);
+    await loaded();
+    fake.db.opsError = 'délai dépassé';
+    await user.click(screen.getByRole('button', { name: /Synchroniser/ }));
+    expect(await screen.findByText(/Opérations non rechargées : .*délai dépassé/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Synchroniser/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Connecter/ })).toBeInTheDocument();
+  });
+
   it('retour de connexion en échec', async () => {
     await renderPage(Bank, { params: { bank: 'error' } });
     expect(screen.getByText(/La connexion à la banque a échoué/)).toBeInTheDocument();
