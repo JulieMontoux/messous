@@ -21,7 +21,8 @@ router.post('/suggestions', async (req, res) => {
   try {
     const [profileRes, chargesRes, envelopesRes, txRes, savingsRes, trendsRes] = await Promise.all([
       pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]),
-      pool.query('SELECT * FROM fixed_charges WHERE user_id = $1', [userId]),
+      // Charges terminées (mois de fin dépassé) exclues
+      pool.query("SELECT * FROM fixed_charges WHERE user_id = $1 AND (end_month IS NULL OR end_month >= TO_CHAR(NOW(), 'YYYY-MM'))", [userId]),
       pool.query('SELECT * FROM envelopes WHERE user_id = $1', [userId]),
       pool.query('SELECT * FROM transactions WHERE user_id = $1 ORDER BY date DESC LIMIT 60', [userId]),
       pool.query('SELECT * FROM savings_history WHERE user_id = $1 ORDER BY month DESC LIMIT 6', [userId]),

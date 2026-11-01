@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Upload, Link2, Trash2, CreditCard, EyeOff, Eye, X, Landmark, Search } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { api, fetchBankTransactions } from '../api/client';
-import { fmt, fmtDec, realSpending, isBankTodo as isTodo, chargeFromForm } from '../utils/budget';
+import { fmt, fmtDec, realSpending, isBankTodo as isTodo, chargeFromForm, isChargeActive } from '../utils/budget';
 import { blankCharge, generateId } from '../data/defaults';
 import ChargeForm from '../components/ChargeForm';
 import { periodStart, formatDay } from '../utils/period';
@@ -87,7 +87,7 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onA
                 </optgroup>
               )}
               <optgroup label="Charges fixes">
-                {fixedCharges.map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
+                {fixedCharges.filter(c => isChargeActive(c)).map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
                 <option value="new-fix">＋ Nouvelle charge fixe…</option>
               </optgroup>
             </select>
@@ -142,7 +142,7 @@ function BulkBar({ count, total, envelopes, fixedCharges, onApply, onClear }) {
           )}
           {fixedCharges.length > 0 && (
             <optgroup label="Charges fixes">
-              {fixedCharges.map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
+              {fixedCharges.filter(c => isChargeActive(c)).map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
             </optgroup>
           )}
         </select>

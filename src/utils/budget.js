@@ -30,16 +30,33 @@ export function isDueInMonth(charge, month1to12) {
   return (month1to12 - charge.dueMonth + 12) % 3 === 0;
 }
 
-export function totalFixed(charges) {
-  return charges.reduce((sum, c) => sum + monthlyAmount(c), 0);
+// Une charge avec un mois de fin (crédit, engagement…) compte jusqu'à ce mois inclus
+export function isChargeActive(charge, month = monthKey()) {
+  return !charge.endMonth || charge.endMonth >= month;
 }
 
-export function totalFixedExSavings(charges) {
-  return charges.filter(c => c.categoryId !== 'savings').reduce((sum, c) => sum + monthlyAmount(c), 0);
+// Nombre de mois de paiement restants, mois en cours inclus (null = sans fin)
+export function monthsLeft(charge, month = monthKey()) {
+  if (!charge.endMonth) return null;
+  const [ey, em] = charge.endMonth.split('-').map(Number);
+  const [y, m] = month.split('-').map(Number);
+  return Math.max(0, (ey * 12 + em) - (y * 12 + m) + 1);
 }
 
-export function totalProgrammedSavings(charges) {
-  return charges.filter(c => c.categoryId === 'savings').reduce((sum, c) => sum + monthlyAmount(c), 0);
+export function activeCharges(charges, month = monthKey()) {
+  return charges.filter(c => isChargeActive(c, month));
+}
+
+export function totalFixed(charges, month) {
+  return activeCharges(charges, month).reduce((sum, c) => sum + monthlyAmount(c), 0);
+}
+
+export function totalFixedExSavings(charges, month) {
+  return activeCharges(charges, month).filter(c => c.categoryId !== 'savings').reduce((sum, c) => sum + monthlyAmount(c), 0);
+}
+
+export function totalProgrammedSavings(charges, month) {
+  return activeCharges(charges, month).filter(c => c.categoryId === 'savings').reduce((sum, c) => sum + monthlyAmount(c), 0);
 }
 
 export function totalVariableEnvelopes(envelopes) {
@@ -204,6 +221,7 @@ export function realSavings(snap) {
 // Normalise le formulaire en charge à enregistrer
 export function chargeFromForm(form) {
   const raw = Number(form.amount);
-  if (form.frequency === 'weekly') return { ...form, frequency: 'monthly', dueMonth: null, amount: weeklyToMonthly(raw) };
-  return { ...form, amount: raw, dueMonth: form.frequency === 'monthly' ? null : Number(form.dueMonth) };
+  const endMonth = form.endMonth || null;
+  if (form.frequency === 'weekly') return { ...form, frequency: 'monthly', dueMonth: null, endMonth, amount: weeklyToMonthly(raw) };
+  return { ...form, amount: raw, endMonth, dueMonth: form.frequency === 'monthly' ? null : Number(form.dueMonth) };
 }

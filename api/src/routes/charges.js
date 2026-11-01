@@ -14,11 +14,13 @@ const toClient = r => ({
   icon: r.icon,
   frequency: r.frequency || 'monthly',
   dueMonth: r.due_month ?? null,
+  endMonth: r.end_month || null,
   lastPaidAt: r.last_paid_at || null,
   lastPaidAmount: r.last_paid_amount != null ? Math.abs(Number(r.last_paid_amount)) : null,
 });
 
 const freqOf = f => (FREQUENCIES.includes(f) ? f : 'monthly');
+const endMonthOf = m => (/^\d{4}-\d{2}$/.test(m || '') ? m : null);
 const dueMonthOf = (f, m) => (freqOf(f) === 'monthly' || !m ? null : Math.min(12, Math.max(1, Number(m))));
 
 router.get('/', async (req, res) => {
@@ -40,11 +42,11 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { id, name, amount, categoryId, icon, frequency, dueMonth } = req.body;
+    const { id, name, amount, categoryId, icon, frequency, dueMonth, endMonth } = req.body;
     const { rows } = await pool.query(
-      `INSERT INTO fixed_charges (id, user_id, name, amount, category_id, icon, frequency, due_month)
-       VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [isUUID(id) ? id : null, req.user.userId, name, amount, categoryId, icon, freqOf(frequency), dueMonthOf(frequency, dueMonth)]
+      `INSERT INTO fixed_charges (id, user_id, name, amount, category_id, icon, frequency, due_month, end_month)
+       VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [isUUID(id) ? id : null, req.user.userId, name, amount, categoryId, icon, freqOf(frequency), dueMonthOf(frequency, dueMonth), endMonthOf(endMonth)]
     );
     res.json(toClient(rows[0]));
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -52,11 +54,11 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { name, amount, categoryId, icon, frequency, dueMonth } = req.body;
+    const { name, amount, categoryId, icon, frequency, dueMonth, endMonth } = req.body;
     const { rows } = await pool.query(
-      `UPDATE fixed_charges SET name=$2, amount=$3, category_id=$4, icon=$5, frequency=$7, due_month=$8
+      `UPDATE fixed_charges SET name=$2, amount=$3, category_id=$4, icon=$5, frequency=$7, due_month=$8, end_month=$9
        WHERE id=$1 AND user_id=$6 RETURNING *`,
-      [req.params.id, name, amount, categoryId, icon, req.user.userId, freqOf(frequency), dueMonthOf(frequency, dueMonth)]
+      [req.params.id, name, amount, categoryId, icon, req.user.userId, freqOf(frequency), dueMonthOf(frequency, dueMonth), endMonthOf(endMonth)]
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(toClient(rows[0]));

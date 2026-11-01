@@ -39,7 +39,7 @@ export const FIXED_CATEGORIES = [
 export const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
 export function blankCharge() {
-  return { name: '', categoryId: 'housing', amount: '', frequency: 'monthly', dueMonth: new Date().getMonth() + 1 };
+  return { name: '', categoryId: 'housing', amount: '', frequency: 'monthly', dueMonth: new Date().getMonth() + 1, endMonth: '' };
 }
 
 export const REGIONS = [

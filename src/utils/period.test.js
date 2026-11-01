@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { weekStart, periodStart, periodEnd, mondayOf, lastWithdrawal, isLastDayOfMonth, addDays, isCutByClosure } from './period';
-import { spentInPeriod, envelopeForecast, realSpending, monthlyAmount, totalFixed, isDueInMonth } from './budget';
+import { spentInPeriod, envelopeForecast, realSpending, monthlyAmount, totalFixed, isDueInMonth, monthsLeft } from './budget';
 
 // Jeudi 30 octobre 2026
 const NOW = new Date(2026, 9, 30, 12, 0);
@@ -149,5 +149,19 @@ describe('mois précédent clôturé', () => {
     const since = periodStart('weekly', { now: nov1, withdrawals, savingsHistory: closedOct });
     const txs = [{ envelopeId: 's', amount: 234, date: '2026-10-31' }];
     expect(spentInPeriod(txs, 's', 'weekly', { since })).toBe(0);
+  });
+});
+
+describe('mois de fin des charges fixes', () => {
+  const credit = { amount: 250, endMonth: '2026-11' };
+  it('compte jusqu\'au mois de fin inclus', () => {
+    expect(totalFixed([credit, { amount: 700 }], '2026-11')).toBe(950);
+    expect(totalFixed([credit, { amount: 700 }], '2026-12')).toBe(700);
+  });
+  it('mois restants', () => {
+    expect(monthsLeft(credit, '2026-10')).toBe(2);
+    expect(monthsLeft(credit, '2026-11')).toBe(1);
+    expect(monthsLeft(credit, '2027-01')).toBe(0);
+    expect(monthsLeft({ amount: 1 }, '2026-10')).toBeNull();
   });
 });
