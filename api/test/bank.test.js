@@ -94,3 +94,24 @@ test('rappel e-mail 7 jours avant l\'expiration de la connexion bancaire, puis e
   const { rows: [after] } = await pool.query('SELECT status FROM bank_connections WHERE id = $1', [conn.id]);
   assert.equal(after.status, 'expired');
 });
+
+test('avance pour quelqu\'un : depuis la banque, hors enveloppes, puis remboursée', async () => {
+  const u = await newUser();
+  await u.post('/api/bank/import', csvBody([`${fr(today)};CB RESTAURANT LE ZINC;-60,00`]));
+  const [btx] = (await u.get('/api/bank/transactions')).body;
+  await u.post(`/api/bank/transactions/${btx.id}/assign`, { advance: { person: 'Léa' } }).expect(200);
+
+  const [adv] = (await u.get('/api/advances').expect(200)).body;
+  assert.equal(adv.person, 'Léa');
+  assert.equal(adv.amount, 60);
+  assert.equal(adv.repaidAt, null);
+  const after = (await u.get('/api/bank/transactions')).body[0];
+  assert.equal(after.advanceId, adv.id);
+  assert.equal((await u.get('/api/transactions')).body.length, 0, 'aucune dépense d\'enveloppe');
+
+  const repaid = (await u.put(`/api/advances/${adv.id}/repaid`, { repaid: true }).expect(200)).body;
+  assert.ok(repaid.repaidAt);
+
+  await u.post(`/api/bank/transactions/${btx.id}/unassign`).expect(200);
+  assert.equal((await u.get('/api/advances')).body.length, 0);
+});

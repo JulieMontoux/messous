@@ -29,6 +29,7 @@ async function assignBankTransaction(userId, bankTxId, envelopeId, { alert = tru
   if (!btx) throw Object.assign(new Error('Opération introuvable'), { status: 404 });
   if (btx.transaction_id) await pool.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [btx.transaction_id, userId]);
   await unlinkWithdrawal(userId, btx.id);
+  await unlinkAdvance(userId, btx.id);
 
   const { rows: [tx] } = await pool.query(
     `INSERT INTO transactions (user_id, envelope_id, amount, note, date, payment_method, bank_transaction_id)
@@ -52,6 +53,7 @@ async function assignToFixedCharge(userId, bankTxId, fixedChargeId) {
   if (!btx) throw Object.assign(new Error('Opération introuvable'), { status: 404 });
   if (btx.transaction_id) await pool.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [btx.transaction_id, userId]);
   await unlinkWithdrawal(userId, btx.id);
+  await unlinkAdvance(userId, btx.id);
   await pool.query(
     'UPDATE bank_transactions SET fixed_charge_id = $2, envelope_id = NULL, transaction_id = NULL, ignored = false WHERE id = $1',
     [btx.id, fixedChargeId]
@@ -93,6 +95,28 @@ async function unlinkWithdrawal(userId, bankTxId) {
   await pool.query('UPDATE withdrawals SET bank_transaction_id = NULL WHERE user_id = $1 AND bank_transaction_id = $2', [userId, bankTxId]);
 }
 
+// Marque une opération comme avance pour quelqu'un (hors enveloppes)
+async function assignAsAdvance(userId, bankTxId, { person, note = '' }) {
+  const { rows: [btx] } = await pool.query('SELECT * FROM bank_transactions WHERE id = $1 AND user_id = $2', [bankTxId, userId]);
+  if (!btx) throw Object.assign(new Error('Opération introuvable'), { status: 404 });
+  if (!person) throw Object.assign(new Error('Pour qui est cette avance ?'), { status: 400 });
+  if (btx.transaction_id) await pool.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [btx.transaction_id, userId]);
+  await unlinkWithdrawal(userId, btx.id);
+  await pool.query(
+    'UPDATE bank_transactions SET envelope_id = NULL, fixed_charge_id = NULL, transaction_id = NULL, ignored = false WHERE id = $1',
+    [btx.id]
+  );
+  await pool.query('DELETE FROM advances WHERE user_id = $1 AND bank_transaction_id = $2', [userId, btx.id]);
+  await pool.query(
+    'INSERT INTO advances (user_id, person, amount, note, date, bank_transaction_id) VALUES ($1, $2, $3, $4, $5, $6)',
+    [userId, String(person).trim().slice(0, 100), Math.abs(Number(btx.amount)), note || cleanLabel(btx.label), btx.booking_date, btx.id]
+  );
+}
+
+async function unlinkAdvance(userId, bankTxId) {
+  await pool.query('DELETE FROM advances WHERE user_id = $1 AND bank_transaction_id = $2', [userId, bankTxId]);
+}
+
 // Marque une opération comme retrait d'espèces (détection auto ou choix manuel)
 async function assignAsWithdrawal(userId, bankTxId) {
   const { rows: [btx] } = await pool.query('SELECT * FROM bank_transactions WHERE id = $1 AND user_id = $2', [bankTxId, userId]);
@@ -102,6 +126,7 @@ async function assignAsWithdrawal(userId, bankTxId) {
     'UPDATE bank_transactions SET envelope_id = NULL, fixed_charge_id = NULL, transaction_id = NULL, ignored = false WHERE id = $1',
     [btx.id]
   );
+  await unlinkAdvance(userId, btx.id);
   const { rows } = await pool.query('SELECT id FROM withdrawals WHERE bank_transaction_id = $1', [btx.id]);
   if (!rows.length) await linkWithdrawal(userId, btx);
 }
@@ -128,7 +153,8 @@ async function applyRules(userId, ids) {
     `SELECT id, label FROM bank_transactions
      WHERE user_id = $1 AND id = ANY($2::uuid[]) AND envelope_id IS NULL AND fixed_charge_id IS NULL
        AND ignored = false AND amount < 0
-       AND NOT EXISTS (SELECT 1 FROM withdrawals w WHERE w.bank_transaction_id = bank_transactions.id)`,
+       AND NOT EXISTS (SELECT 1 FROM withdrawals w WHERE w.bank_transaction_id = bank_transactions.id)
+       AND NOT EXISTS (SELECT 1 FROM advances a WHERE a.bank_transaction_id = bank_transactions.id)`,
     [userId, ids]
   );
   let count = 0;
@@ -185,4 +211,4 @@ async function syncUser(userId) {
   return total;
 }
 
-module.exports = { storeTransactions, assignBankTransaction, assignToFixedCharge, assignAsWithdrawal, unlinkWithdrawal, applyRules, syncConnection, syncUser, cleanLabel };
+module.exports = { storeTransactions, assignBankTransaction, assignToFixedCharge, assignAsWithdrawal, unlinkWithdrawal, assignAsAdvance, unlinkAdvance, applyRules, syncConnection, syncUser, cleanLabel };

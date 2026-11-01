@@ -10,6 +10,7 @@ const defaultState = {
   withdrawals: [],
   bankTransactions: [],
   carryovers: [],
+  advances: [],
   settings: { viewMode: 'monthly' },
 };
 
@@ -62,6 +63,9 @@ function reducer(state, action) {
 
     case 'SET_PROFILE':
       return { ...state, profile: { ...state.profile, ...action.payload } };
+
+    case 'SET_ADVANCES':
+      return { ...state, advances: action.payload };
 
     case 'SET_WITHDRAWALS':
       return { ...state, withdrawals: action.payload };

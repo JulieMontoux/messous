@@ -77,7 +77,7 @@ export async function fetchBankTransactions() {
 }
 
 export async function fetchAll() {
-  const [profile, settings, fixedCharges, envelopes, transactions, savingsHistory, withdrawals, bankTransactions, carryovers] = await Promise.all([
+  const [profile, settings, fixedCharges, envelopes, transactions, savingsHistory, withdrawals, bankTransactions, carryovers, advances] = await Promise.all([
     api.get('/api/profile'),
     api.get('/api/settings'),
     api.get('/api/charges'),
@@ -87,6 +87,7 @@ export async function fetchAll() {
     api.get('/api/withdrawals').catch(() => []),
     fetchBankTransactions(),
     api.get('/api/envelopes/carryovers').catch(() => []),
+    api.get('/api/advances').catch(() => []),
   ]);
   return {
     profile: {
@@ -102,5 +103,6 @@ export async function fetchAll() {
     withdrawals,
     bankTransactions,
     carryovers,
+    advances,
   };
 }

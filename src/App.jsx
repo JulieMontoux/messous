@@ -14,6 +14,7 @@ import Suggestions from './pages/Suggestions';
 import Settings from './pages/Settings';
 import History from './pages/History';
 import Bank from './pages/Bank';
+import Advances from './pages/Advances';
 import { api, fetchAll } from './api/client';
 import {
   totalFixed as getTotalFixed,
@@ -34,6 +35,7 @@ const PAGES = {
   suggestions: Suggestions,
   history: History,
   bank: Bank,
+  advances: Advances,
   settings: Settings,
 };
 

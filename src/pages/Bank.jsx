@@ -56,6 +56,11 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, suggestion, o
   function classify() {
     if (target === 'new-fix') return onCreateCharge(b, remember);
     if (target === 'cash') return onAssign(b, { asWithdrawal: true }, false);
+    if (target === 'advance') {
+      const person = window.prompt('Avance pour qui ? (prénom)');
+      if (person && person.trim()) onAssign(b, { advance: { person: person.trim() } }, false);
+      return;
+    }
     const [kind, id] = target.split(':');
     onAssign(b, kind === 'fix' ? { fixedChargeId: id } : { envelopeId: id }, remember);
   }
@@ -85,9 +90,11 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, suggestion, o
       </div>
 
       {debit && !b.ignored && (
-        env || charge || b.withdrawalId ? (
+        env || charge || b.withdrawalId || b.advanceId ? (
           <div className="flex items-center gap-2 mt-2">
-            {b.withdrawalId
+            {b.advanceId
+              ? <span className="text-xs bg-amber-50 text-amber-700 font-medium px-2 py-1 rounded-full">🤝 Avance · {b.advancePerson}</span>
+              : b.withdrawalId
               ? <span className="text-xs bg-savings/10 text-savings font-medium px-2 py-1 rounded-full">💶 Retrait d'espèces</span>
               : env
               ? <span className="text-xs bg-primary/10 text-primary font-medium px-2 py-1 rounded-full">{env.icon || ''} {env.name}</span>
@@ -125,6 +132,7 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, suggestion, o
                 <option value="new-fix">＋ Nouvelle charge fixe…</option>
               </optgroup>
               <option value="cash">💶 Retrait d'espèces</option>
+              <option value="advance">🤝 Avance pour quelqu'un…</option>
             </select>
             <label className="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer">
               <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
@@ -382,6 +390,7 @@ export default function Bank({ params = {} }) {
     dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bank });
     dispatch({ type: 'SET_TRANSACTIONS', payload: txs });
     dispatch({ type: 'SET_WITHDRAWALS', payload: withdrawals });
+    dispatch({ type: 'SET_ADVANCES', payload: await api.get('/api/advances').catch(() => []) });
     await loadStatus();
   }
 
@@ -411,7 +420,7 @@ export default function Bank({ params = {} }) {
   async function assign(b, target, remember) {
     try {
       const { transaction } = await api.post(`/api/bank/transactions/${b.id}/assign`, { ...target, remember });
-      if (remember || target.asWithdrawal) {
+      if (remember || target.asWithdrawal || target.advance) {
         await refresh();
       } else {
         dispatch({
@@ -446,7 +455,7 @@ export default function Bank({ params = {} }) {
     dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bankTransactions.map(x => x.id === b.id ? { ...x, envelopeId: null, fixedChargeId: null, transactionId: null } : x) });
     dispatch({ type: 'SET_TRANSACTIONS', payload: transactions.filter(t => t.id !== b.transactionId) });
     if (b.fixedChargeId) await reloadCharges();
-    if (b.withdrawalId) await refresh();
+    if (b.withdrawalId || b.advanceId) await refresh();
   }
 
   function toggle(id) {
@@ -515,7 +524,7 @@ export default function Bank({ params = {} }) {
 
   async function ignore(b, ignored) {
     await api.post(`/api/bank/transactions/${b.id}/ignore`, { ignored });
-    if (b.withdrawalId) return refresh();
+    if (b.withdrawalId || b.advanceId) return refresh();
     dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bankTransactions.map(x => x.id === b.id ? { ...x, ignored } : x) });
   }
 

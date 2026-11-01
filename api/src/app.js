@@ -32,6 +32,7 @@ app.use('/api/recurring', require('./routes/recurring'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/withdrawals', require('./routes/withdrawals'));
 app.use('/api/bank', require('./routes/bank'));
+app.use('/api/advances', require('./routes/advances'));
 
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
