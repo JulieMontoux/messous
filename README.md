@@ -54,7 +54,30 @@ npm test                       # tests des calculs (vitest)
 (cd api && DATABASE_URL=postgres://… npm test)   # tests de l'API sur une vraie base PostgreSQL
 ```
 
-Les tests (front + API) tournent automatiquement sur GitHub à chaque pull request (`.github/workflows/ci.yml`).
+## Pipeline (`.github/workflows/ci.yml`)
+
+Chaque étape ne démarre que si la précédente a réussi :
+
+| Étape | Contrôles | Bloque si… |
+|---|---|---|
+| 1 · Qualité | lint (front, API, e2e), build, Gitleaks | erreur de lint, build cassé, secret dans le code |
+| 2 · Tests | vitest (front) et node:test (API sur PostgreSQL) | test en échec, couverture < 80 % sur un fichier (lignes, fonctions, branches) |
+| 3 · Sécurité | npm audit, Trivy (lockfiles, Dockerfiles, secrets), CodeQL, SonarCloud | CVE haute/critique corrigeable, faille CodeQL de niveau « erreur », quality gate Sonar rouge |
+| 4 · Images | build Docker + Trivy | CVE haute/critique corrigeable dans une image |
+| 5 · Bout en bout | Playwright sur le build de production | parcours en échec |
+| ✔ Pipeline OK | synthèse | une étape a échoué ou n'a pas tourné |
+
+Le serveur Proxmox ne déploie un commit que si « ✔ Pipeline OK » est vert (`REQUIRE_CI=0` pour désactiver,
+`update.sh --force` pour forcer). Dependabot propose chaque semaine les mises à jour de sécurité.
+
+**SonarCloud** : importer le dépôt sur https://sonarcloud.io (organisation `juliemontoux`), désactiver
+l'« Automatic Analysis », puis ajouter le jeton dans GitHub → Settings → Secrets → Actions → `SONAR_TOKEN`.
+Sans jeton, l'étape Sonar est sautée avec un avertissement.
+
+**Bloquer la fusion** : GitHub → Settings → Branches → règle sur `main` → « Require status checks » →
+cocher **✔ Pipeline OK**.
+
+Couverture en local : `npm run test:coverage` et `(cd api && npm run test:coverage)`.
 
 ## Déploiement (conteneur Proxmox)
 
@@ -98,6 +121,10 @@ dans `./backups/messous-AAAA-MM-JJ_HHMM.dump`. Les fichiers de plus de 30 jours 
 Renseigner `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` et `APP_URL` dans `.env`
 (Gmail : mot de passe d'application, port 587). Le bouton *Test* du profil envoie un e-mail de vérification.
 Chaque alerte n'est envoyée qu'une fois par enveloppe, par mois et par seuil.
+
+### Réseau
+
+Le conteneur du front écoute sur le port 8080 (nginx sans droits root) ; `PORT` dans `.env` reste le port public.
 
 ### Notifications push
 

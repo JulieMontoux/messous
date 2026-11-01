@@ -7,8 +7,11 @@ ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
 RUN npm run build
 
-FROM nginx:alpine
+# nginx sans droits root (écoute sur 8080)
+FROM nginxinc/nginx-unprivileged:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY nginx-security-headers.conf /etc/nginx/security-headers.conf
-EXPOSE 80
+USER 101
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1

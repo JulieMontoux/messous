@@ -39,7 +39,7 @@ export default defineConfig({
       include: ['src/**/*.{js,jsx}'],
       // Point d'entrée et outillage de test exclus
       exclude: ['src/main.jsx', 'src/test/**', 'src/**/*.test.{js,jsx}'],
-      reporter: ['text', 'text-summary'],
+      reporter: ['text', 'text-summary', 'lcov'],
       thresholds: { lines: 80, statements: 80, functions: 80, branches: 80, perFile: true },
     },
   },

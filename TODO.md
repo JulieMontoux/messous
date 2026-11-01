@@ -15,3 +15,9 @@
       pour les suggestions IA de classement
 - [ ] Connecteur bancaire : résoudre « Erreur réseau » sur « Connecter ma banque »
       (logs API + test d'accès à api.enablebanking.com depuis le conteneur)
+
+## Pipeline
+- [ ] SonarCloud : importer le dépôt (https://sonarcloud.io, organisation `juliemontoux`), désactiver
+      « Automatic Analysis », créer le jeton et l'ajouter en secret GitHub `SONAR_TOKEN`
+- [ ] GitHub → Settings → Branches : protéger `main`, vérification obligatoire « ✔ Pipeline OK »
+- [ ] Sur le serveur : relancer `sudo ./deploy/proxmox/install.sh main` (installe jq pour la vérification de la CI)

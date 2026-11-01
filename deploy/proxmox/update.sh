@@ -27,6 +27,27 @@ if [ "$LOCAL" = "$REMOTE" ] && [ "$FORCE" != "--force" ]; then
   exit 0
 fi
 
+# Ne déploie que si la CI GitHub a validé ce commit (« ✔ Pipeline OK »), sauf REQUIRE_CI=0 ou --force
+if [ "${REQUIRE_CI:-1}" = "1" ] && [ "$FORCE" != "--force" ] && ! command -v jq >/dev/null; then
+  echo "⚠️  jq manquant : impossible de vérifier la CI (installe-le : apt install jq). Déploiement bloqué." >&2
+  exit 1
+fi
+if [ "${REQUIRE_CI:-1}" = "1" ] && [ "$FORCE" != "--force" ]; then
+  REPO=$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')
+  STATUS=$(curl -fsS -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/$REPO/commits/$REMOTE/check-runs?check_name=$(printf '%s' '✔ Pipeline OK' | jq -sRr @uri)" \
+    | jq -r '[.check_runs[] | .conclusion // .status] | first // "absent"' 2>/dev/null || echo "inconnu")
+  case "$STATUS" in
+    success) ;;
+    queued|in_progress|absent|inconnu)
+      echo "[$(date '+%F %T')] ${REMOTE:0:7} : CI pas encore terminée ($STATUS), nouvel essai au prochain passage"
+      exit 0 ;;
+    *)
+      echo "[$(date '+%F %T')] ⛔ ${REMOTE:0:7} : la CI a échoué ($STATUS), déploiement refusé" >&2
+      exit 0 ;;
+  esac
+fi
+
 echo "[$(date '+%F %T')] Mise à jour ${LOCAL:0:7} → ${REMOTE:0:7} ($BRANCH)"
 git pull --ff-only --quiet origin "$BRANCH"
 

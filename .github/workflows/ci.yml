@@ -1,28 +1,75 @@
+# Pipeline MesSous — chaque étape bloque la suivante si elle échoue.
+#
+#   1. Qualité ........ lint (front, API, tests e2e) + recherche de secrets
+#   2. Tests .......... front et API, couverture ≥ 80 % par fichier (sinon échec)
+#   3. Sécurité ....... CVE des dépendances (npm audit + Trivy), CodeQL, SonarCloud (quality gate)
+#   4. Images ......... build Docker + scan des CVE des images
+#   5. Bout en bout ... parcours Playwright sur le build de production
+#   ✔  Pipeline OK .... unique vérification à rendre obligatoire dans GitHub (protection de branche)
 name: CI
 
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+
+# Une seule exécution par branche : la précédente est annulée si on pousse à nouveau
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 20
 
 jobs:
-  front:
-    name: Front (lint, tests, build)
+  # ─── 1. Qualité ────────────────────────────────────────────────────────────
+  lint:
+    name: 1 · Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
       - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
+      - name: Lint front, API et tests (erreurs bloquantes)
+        run: npx oxlint src api/src e2e
+      - name: Build de production
+        run: npm run build
 
-  api:
-    name: API (tests sur PostgreSQL)
+  secrets:
+    name: 1 · Secrets dans le code
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Gitleaks (clés, mots de passe, jetons)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── 2. Tests et couverture ────────────────────────────────────────────────
+  test-front:
+    name: 2 · Tests front + couverture
+    runs-on: ubuntu-latest
+    needs: [lint, secrets]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
+      - run: npm ci
+      - name: Tests + seuil de couverture (80 % par fichier)
+        run: npm run test:coverage
+      - uses: actions/upload-artifact@v4
+        with: { name: coverage-front, path: coverage/lcov.info, retention-days: 7 }
+
+  test-api:
+    name: 2 · Tests API + couverture
+    runs-on: ubuntu-latest
+    needs: [lint, secrets]
     services:
       postgres:
         image: postgres:16-alpine
@@ -31,58 +78,162 @@ jobs:
           POSTGRES_USER: messous
           # Base jetable du CI : pas de mot de passe (aucun secret dans le dépôt)
           POSTGRES_HOST_AUTH_METHOD: trust
-        ports:
-          - 5432:5432
+        ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U messous"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+          --health-interval 5s --health-timeout 5s --health-retries 10
     defaults:
-      run:
-        working-directory: api
+      run: { working-directory: api }
     env:
       DATABASE_URL: postgres://messous@localhost:5432/messous
       TZ: Europe/Paris
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: api/package-lock.json
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm, cache-dependency-path: api/package-lock.json }
       - run: npm ci
-      # Tests + couverture minimale de 80 % par fichier (lignes, fonctions, branches)
-      - run: npm run test:coverage
+      - name: Tests + seuil de couverture (80 % par fichier)
+        run: npm run test:coverage
+      - uses: actions/upload-artifact@v4
+        with: { name: coverage-api, path: api/coverage/lcov.info, retention-days: 7 }
 
-  e2e:
-    name: Parcours de bout en bout (Playwright)
+  # ─── 3. Sécurité ───────────────────────────────────────────────────────────
+  dependencies:
+    name: 3 · CVE des dépendances
     runs-on: ubuntu-latest
-    needs: [front, api]
+    needs: [test-front, test-api]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}' }
+      - name: npm audit — front (toutes les dépendances)
+        run: npm audit --audit-level=high
+      - name: npm audit — API (dépendances de production)
+        working-directory: api
+        run: npm audit --omit=dev --audit-level=high
+      - name: Trivy — CVE des lockfiles, erreurs de config (Dockerfile, compose), secrets
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          skip-dirs: node_modules,api/node_modules
+
+  codeql:
+    name: 3 · CodeQL (failles dans le code)
+    runs-on: ubuntu-latest
+    needs: [test-front, test-api]
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - id: analyze
+        uses: github/codeql-action/analyze@v3
+        with: { output: codeql-results }
+      - name: Bloquer si une faille de gravité « erreur » est trouvée
+        run: |
+          count=$(jq '[.runs[].results[] | select(.level == "error")] | length' codeql-results/*.sarif)
+          echo "Résultats bloquants : $count"
+          if [ "$count" -gt 0 ]; then
+            jq -r '.runs[].results[] | select(.level == "error") | "::error file=\(.locations[0].physicalLocation.artifactLocation.uri),line=\(.locations[0].physicalLocation.region.startLine)::\(.message.text)"' codeql-results/*.sarif
+            exit 1
+          fi
+
+  sonar:
+    name: 3 · SonarCloud (quality gate)
+    runs-on: ubuntu-latest
+    needs: [test-front, test-api]
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/download-artifact@v4
+        with: { name: coverage-front, path: coverage }
+      - uses: actions/download-artifact@v4
+        with: { name: coverage-api, path: api/coverage }
+      - name: Vérifier la configuration
+        id: check
+        env: { SONAR_TOKEN: '${{ secrets.SONAR_TOKEN }}' }
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::warning::SONAR_TOKEN absent : analyse SonarCloud ignorée (voir README → Pipeline)."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Analyse et attente du quality gate (échec si le gate est rouge)
+        if: steps.check.outputs.enabled == 'true'
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+
+  # ─── 4. Images Docker ──────────────────────────────────────────────────────
+  images:
+    name: 4 · Images Docker + CVE
+    runs-on: ubuntu-latest
+    needs: [dependencies, codeql, sonar]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { name: frontend, context: ., file: Dockerfile }
+          - { name: api, context: api, file: api/Dockerfile }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build de l'image ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          load: true
+          push: false
+          tags: messous-${{ matrix.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: Trivy — CVE de l'image (paquets système et Node)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: messous-${{ matrix.name }}:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+  # ─── 5. Bout en bout ───────────────────────────────────────────────────────
+  e2e:
+    name: 5 · Parcours de bout en bout
+    runs-on: ubuntu-latest
+    needs: [images]
     services:
       postgres:
         image: postgres:16-alpine
         env:
           POSTGRES_DB: messous
           POSTGRES_USER: messous
-          # Base jetable du CI : pas de mot de passe (aucun secret dans le dépôt)
           POSTGRES_HOST_AUTH_METHOD: trust
-        ports:
-          - 5432:5432
+        ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U messous"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       E2E_DATABASE_URL: postgres://messous@localhost:5432/messous
       TZ: Europe/Paris
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
       - run: npm ci
       - run: npm ci
         working-directory: api
@@ -90,7 +241,21 @@ jobs:
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()
-        with:
-          name: playwright-traces
-          path: test-results/
-          retention-days: 7
+        with: { name: playwright-traces, path: test-results/, retention-days: 7 }
+
+  # ─── Résultat global ───────────────────────────────────────────────────────
+  pipeline-ok:
+    name: ✔ Pipeline OK
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint, secrets, test-front, test-api, dependencies, codeql, sonar, images, e2e]
+    steps:
+      - name: Toutes les étapes doivent avoir réussi
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          if echo "$RESULTS" | grep -qE '"(failure|cancelled|skipped)"'; then
+            echo "::error::Au moins une étape a échoué ou n'a pas pu s'exécuter : fusion bloquée."
+            exit 1
+          fi

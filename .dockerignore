@@ -1,0 +1,16 @@
+# Jamais dans le contexte de build : secrets, dépendances locales, historique, sorties de tests
+.env
+.env.*
+secrets
+backups
+.git
+.github
+node_modules
+api
+dist
+coverage
+test-results
+playwright-report
+e2e
+deploy
+*.log
