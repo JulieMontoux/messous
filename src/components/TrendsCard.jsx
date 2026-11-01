@@ -7,7 +7,7 @@ import { monthKey } from '../utils/period';
 const MONTH_SHORT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const short = m => `${MONTH_SHORT[Number(m.slice(5)) - 1]} ${m.slice(2, 4)}`;
 
-function TrendTooltip({ active, payload }) {
+export function TrendTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (

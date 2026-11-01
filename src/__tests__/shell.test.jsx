@@ -216,3 +216,26 @@ describe('formulaires partagés', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+describe('infobulle des tendances', () => {
+  it('rien hors survol ; mois terminé ; mois en cours', async () => {
+    const { TrendTooltip } = await import('../components/TrendsCard');
+    const { container } = render(<TrendTooltip active={false} payload={[]} />);
+    expect(container).toBeEmptyDOMElement();
+    render(<TrendTooltip active payload={[{ payload: { month: '2026-10', total: 280 } }]} />);
+    expect(screen.getByText('oct. 26')).toBeInTheDocument();
+    render(<TrendTooltip active payload={[{ payload: { month: '2026-11', total: 20, current: true } }]} />);
+    expect(screen.getByText('nov. 26 · en cours')).toBeInTheDocument();
+  });
+
+  it('baisse des dépenses et enveloppe sans dépense passée', async () => {
+    freezeDate();
+    const envelopes = [{ id: 'a', type: 'need', name: 'A' }, { id: 's', type: 'saving', name: 'S' }];
+    const tx = [
+      { envelopeId: 'a', amount: 300, date: '2026-07-05' }, { envelopeId: 'a', amount: 300, date: '2026-08-05' },
+      { envelopeId: 'a', amount: 300, date: '2026-09-05' }, { envelopeId: 'a', amount: 100, date: '2026-10-05' },
+    ];
+    render(<TrendsCard transactions={tx} envelopes={envelopes} />);
+    expect(screen.getByText('-67 %')).toBeInTheDocument();
+  });
+});
