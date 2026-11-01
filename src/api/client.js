@@ -56,6 +56,7 @@ export const DEFAULT_PROFILE = {
   alertThreshold: 80,
   alertEmail: '',
   monthEndEmail: true,
+  roundWithdrawals: true,
   accountEmail: '',
   mailConfigured: false,
 };

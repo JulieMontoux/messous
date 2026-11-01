@@ -259,6 +259,12 @@ export default function Settings() {
           onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { hasCar: v } })}
         />
         <Toggle
+          label="💶 Arrondir les retraits à la dizaine"
+          sub="Pas de billets de 5 € au distributeur : 17 € → 20 €. Sinon, montants exacts à l'euro près."
+          value={profile.roundWithdrawals !== false}
+          onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { roundWithdrawals: v } })}
+        />
+        <Toggle
           label="🚬 Je fume"
           sub="Profil tabac, enveloppe et alerte dédiées"
           value={profile.isSmoker}

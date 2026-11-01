@@ -25,6 +25,7 @@ function toClient(r) {
     alertThreshold: r.alert_threshold ?? 80,
     alertEmail: r.alert_email || '',
     monthEndEmail: r.month_end_email ?? true,
+    roundWithdrawals: r.round_withdrawals ?? true,
   };
 }
 
@@ -48,6 +49,7 @@ const FIELDS = {
   alertThreshold: 'alert_threshold',
   alertEmail: ['alert_email', v => (v ? String(v).trim() : null)],
   monthEndEmail: 'month_end_email',
+  roundWithdrawals: 'round_withdrawals',
 };
 
 router.get('/', async (req, res) => {

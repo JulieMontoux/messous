@@ -306,6 +306,16 @@ describe('montants arrondis à la dizaine supérieure (pas de billets de 5 €)'
     expect(r.envelopes.grandTotal).toBe(210);
   });
 
+  it('arrondi désactivé (profil) → montant exact à l\'euro supérieur', () => {
+    mockSpent({ g1: 283.4 }); // reste 16,60
+    const r = computeWithdrawal({
+      envelopes: [grocery], transactions: TXS, mode: 'monthly', roundToTen: false,
+      idealNeeds: 500, idealWants: 300, idealSavings: 200,
+    });
+    expect(r.envelopes.needs[0].toWithdraw).toBe(17);
+    expect(r.envelopes.grandTotal).toBe(17);
+  });
+
   it('17 → 20 sur chaque ligne', () => {
     mockSpent({ g1: 283 }); // budget=300, spent=283, reste 17
     const r = computeWithdrawal({

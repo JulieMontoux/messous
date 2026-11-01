@@ -7,7 +7,7 @@ import {
   transactionsInPeriod, envelopeForecast, periodDaysFor,
 } from '../utils/budget';
 import { periodStart, periodEnd, lastWithdrawal, toLocalDate, monthKey, formatDay, isCutByClosure } from '../utils/period';
-import { computeWithdrawal, roundUpBill } from '../utils/withdrawal';
+import { computeWithdrawal, roundUpTo } from '../utils/withdrawal';
 import { api } from '../api/client';
 import { cn } from '../lib/utils';
 import Modal from '../components/Modal';
@@ -30,7 +30,7 @@ function PeriodNote({ mode, since, until, anchor, cut }) {
   );
 }
 
-function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory, viewMode, idealNeeds, idealWants, idealSavings, tobaccoEnv, onSave, onClose }) {
+function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory, roundToTen, viewMode, idealNeeds, idealWants, idealSavings, tobaccoEnv, onSave, onClose }) {
   const [mode, setMode] = useState(viewMode);
   const [calcMode, setCalcMode] = useState('ideal');
   const [record, setRecord] = useState({ date: toLocalDate(), amount: '', note: '' });
@@ -44,7 +44,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
   const withdrawn = withdrawnSince(withdrawals, since);
 
   const { envelopes: envResult, ideal: idealResult, cashSpent, cashInHand } = computeWithdrawal({
-    envelopes, transactions, mode, idealNeeds, idealWants, idealSavings, withdrawn, since,
+    envelopes, transactions, mode, idealNeeds, idealWants, idealSavings, withdrawn, since, roundToTen,
   });
 
   const { needs: needsData, wants: wantData, savings: savingData, tobacco } = envResult;
@@ -62,7 +62,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
   const needsTotal = envResult.needsTotal;
   const pleasuresTotal = isIdeal ? pleasuresIdealToWithdraw : envResult.wantsTotal;
   const savingsTotal = isIdeal ? savingsIdealToWithdraw : envResult.savingsTotal;
-  const grandTotal = roundUpBill(Math.max(0, needsTotal + tobaccoToWithdraw + pleasuresTotal + savingsTotal - cashInHand));
+  const grandTotal = roundUpTo(Math.max(0, needsTotal + tobaccoToWithdraw + pleasuresTotal + savingsTotal - cashInHand), roundToTen ? 10 : 1);
 
   const hasAnySpending = [...needsData, ...wantData, ...savingData].some(e => e.spent > 0) || tobaccoSpent > 0;
   const recordAmount = record.amount === '' ? grandTotal : Number(record.amount);
@@ -274,7 +274,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
               className="input font-semibold"
               type="number"
               min="0"
-              step="10"
+              step={roundToTen ? 10 : 1}
               placeholder={String(grandTotal)}
               value={record.amount}
               onChange={e => setRecord(r => ({ ...r, amount: e.target.value }))}
@@ -753,6 +753,7 @@ export default function Envelopes() {
           transactions={transactions}
           withdrawals={withdrawals}
           savingsHistory={savingsHistory}
+          roundToTen={profile.roundWithdrawals !== false}
           viewMode={viewMode}
           idealNeeds={idealNeeds}
           idealWants={idealWants}
