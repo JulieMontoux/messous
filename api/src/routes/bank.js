@@ -5,6 +5,7 @@ const auth = require('../middleware/auth');
 const eb = require('../lib/bank/enablebanking');
 const { parseBankCsv } = require('../lib/bank/csv');
 const { merchantKey } = require('../lib/bank/common');
+const { suggestTargets } = require('../lib/bank/suggest');
 const { storeTransactions, assignBankTransaction, assignToFixedCharge, assignAsWithdrawal, unlinkWithdrawal, syncUser, syncConnection } = require('../lib/bank/sync');
 const { appUrl } = require('../lib/mailer');
 const { checkEnvelopeAlert } = require('../lib/alerts');
@@ -187,6 +188,27 @@ router.post('/transactions/:id/assign', async (req, res) => {
       },
     });
   } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// Suggestions de classement (mots-clés puis IA locale) pour les opérations à classer
+router.post('/suggest', async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { ids, useAi = true } = req.body || {};
+    const [envs, charges, todo] = await Promise.all([
+      pool.query('SELECT id, name, category_id FROM envelopes WHERE user_id = $1', [userId]),
+      pool.query("SELECT id, name, category_id FROM fixed_charges WHERE user_id = $1 AND (end_month IS NULL OR end_month >= TO_CHAR(NOW(), 'YYYY-MM'))", [userId]),
+      pool.query(
+        `SELECT b.id, b.label FROM bank_transactions b
+         WHERE b.user_id = $1 AND b.amount < 0 AND b.ignored = false AND b.envelope_id IS NULL AND b.fixed_charge_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM withdrawals w WHERE w.bank_transaction_id = b.id)
+           AND ($2::uuid[] IS NULL OR b.id = ANY($2::uuid[]))
+         ORDER BY b.booking_date DESC LIMIT 200`,
+        [userId, Array.isArray(ids) && ids.length ? ids : null]
+      ),
+    ]);
+    res.json(await suggestTargets(todo.rows, envs.rows, charges.rows, { useAi }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // Classement en masse : { ids, envelopeId | fixedChargeId | ignore, remember }

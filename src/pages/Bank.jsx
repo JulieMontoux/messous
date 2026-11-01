@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Upload, Link2, Trash2, CreditCard, EyeOff, Eye, X, Landmark, Search } from 'lucide-react';
+import { RefreshCw, Upload, Link2, Trash2, CreditCard, EyeOff, Eye, X, Landmark, Search, Sparkles, Check } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { api, fetchBankTransactions } from '../api/client';
 import { fmt, fmtDec, realSpending, isBankTodo as isTodo, chargeFromForm, isChargeActive } from '../utils/budget';
@@ -30,7 +30,23 @@ function SpendTile({ label, value, sub, accent = 'text-slate-800' }) {
 const FREQ_LABEL = { quarterly: ' · trimestriel', yearly: ' · annuel' };
 
 // Valeur du menu de classement : « env:<id> », « fix:<id> » ou « new-fix »
-function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onAssign, onUnassign, onIgnore, onCreateCharge }) {
+// Libellé d'une destination « env:<id> » / « fix:<id> »
+function targetLabel(target, envelopes, fixedCharges) {
+  const [kind, id] = target.split(':');
+  if (kind === 'env') {
+    const e = envelopes.find(x => x.id === id);
+    return e ? `${e.icon || ''} ${e.name}` : null;
+  }
+  const c = fixedCharges.find(x => x.id === id);
+  return c ? `📌 ${c.name}` : null;
+}
+
+function targetBody(target) {
+  const [kind, id] = target.split(':');
+  return kind === 'fix' ? { fixedChargeId: id } : { envelopeId: id };
+}
+
+function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, suggestion, onToggle, onAssign, onUnassign, onIgnore, onCreateCharge }) {
   const [target, setTarget] = useState('');
   const [remember, setRemember] = useState(true);
   const env = envelopes.find(e => e.id === b.envelopeId);
@@ -81,6 +97,21 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onA
             </button>
           </div>
         ) : bulkMode ? null : (
+          <>
+          {suggestion && targetLabel(suggestion.target, envelopes, fixedCharges) && (
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 font-medium px-2 py-1 rounded-full flex items-center gap-1">
+                <Sparkles size={11} /> {targetLabel(suggestion.target, envelopes, fixedCharges)} ?
+                <span className="text-[10px] text-amber-500 font-normal">{suggestion.source === 'ai' ? 'IA' : 'marchand connu'}</span>
+              </span>
+              <button
+                onClick={() => onAssign(b, targetBody(suggestion.target), false)}
+                className="text-xs font-semibold text-savings flex items-center gap-0.5 hover:underline"
+              >
+                <Check size={13} /> Accepter
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <select className="input py-1.5 text-xs flex-1 min-w-[160px]" value={target} onChange={e => setTarget(e.target.value)}>
               <option value="">Classer dans…</option>
@@ -106,6 +137,7 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onA
               <EyeOff size={14} />
             </button>
           </div>
+          </>
         )
       )}
       {b.ignored && (
@@ -330,6 +362,8 @@ export default function Bank({ params = {} }) {
   const [filter, setFilter] = useState('todo');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(() => new Set());
+  const [suggestions, setSuggestions] = useState({});
+  const [suggesting, setSuggesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState(
     params.bank === 'ok' ? { ok: true, text: 'Banque connectée ✅ Les opérations ont été récupérées.' }
@@ -421,6 +455,45 @@ export default function Bank({ params = {} }) {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  }
+
+  async function suggest() {
+    setSuggesting(true);
+    try {
+      const r = await api.post('/api/bank/suggest', {});
+      setSuggestions(r.suggestions || {});
+      const n = Object.keys(r.suggestions || {}).length;
+      setMessage({
+        ok: true,
+        text: `${n} suggestion${n > 1 ? 's' : ''} de classement`
+          + (r.aiError ? ' (IA indisponible : seulement les marchands connus)' : '') + '. Vérifie puis accepte.',
+      });
+    } catch (err) {
+      setMessage({ ok: false, text: err.message });
+    }
+    setSuggesting(false);
+  }
+
+  // Accepte toutes les suggestions visibles, regroupées par destination (un appel par destination)
+  async function acceptAllSuggestions(rows) {
+    const groups = {};
+    for (const b of rows) {
+      const sug = suggestions[b.id];
+      if (sug && targetLabel(sug.target, envelopes, fixedCharges)) (groups[sug.target] ||= []).push(b.id);
+    }
+    try {
+      let n = 0;
+      for (const [target, ids] of Object.entries(groups)) {
+        const r = await api.post('/api/bank/transactions/bulk', { ids, ...targetBody(target) });
+        n += r.updated;
+      }
+      setSuggestions({});
+      await refresh();
+      if (Object.keys(groups).some(t => t.startsWith('fix:'))) await reloadCharges();
+      setMessage({ ok: true, text: `${n} opération${n > 1 ? 's' : ''} classée${n > 1 ? 's' : ''}.` });
+    } catch (err) {
+      setMessage({ ok: false, text: err.message });
+    }
   }
 
   async function bulkApply(action, remember) {
@@ -602,6 +675,22 @@ export default function Bank({ params = {} }) {
               />
             </div>
           </div>
+          {filter === 'todo' && todoCount > 0 && selected.size === 0 && (() => {
+            const suggested = visible.filter(b => suggestions[b.id]);
+            return (
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <button onClick={suggest} disabled={suggesting} className="btn-secondary text-xs py-1.5 flex items-center gap-1.5">
+                  <Sparkles size={13} className={suggesting ? 'animate-pulse text-amber-500' : 'text-amber-500'} />
+                  {suggesting ? 'Analyse en cours…' : 'Suggérer un classement'}
+                </button>
+                {suggested.length > 0 && (
+                  <button onClick={() => acceptAllSuggestions(suggested)} className="btn-primary text-xs py-1.5 flex items-center gap-1">
+                    <Check size={13} /> Accepter les {suggested.length} suggestion{suggested.length > 1 ? 's' : ''}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           {selected.size > 0 && (
             <BulkBar
               count={selected.size}
@@ -623,6 +712,7 @@ export default function Bank({ params = {} }) {
                 fixedCharges={fixedCharges}
                 selected={selected.has(b.id)}
                 bulkMode={selected.size > 0}
+                suggestion={suggestions[b.id]}
                 onToggle={toggle}
                 onAssign={assign}
                 onUnassign={unassign}
