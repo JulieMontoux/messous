@@ -15,6 +15,8 @@ async function checkEnvelopeAlert(userId, envelopeId, expenseDate) {
 
   const { rows: [env] } = await pool.query('SELECT * FROM envelopes WHERE id = $1 AND user_id = $2', [envelopeId, userId]);
   if (!env || env.type === 'saving') return;
+  // Arrêt du tabac en cours : pas d'alerte sur l'enveloppe tabac
+  if (env.category_id === 'tobacco' && profile.tobacco_quit_date) return;
   const budget = Number(env.budget_monthly) || 0;
   if (budget <= 0) return;
 

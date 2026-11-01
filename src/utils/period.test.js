@@ -275,3 +275,22 @@ describe('objectifs', async () => {
     expect(p.reachMonth).toBe('2027-04');
   });
 });
+
+describe('tabac', async () => {
+  const { tobaccoStats } = await import('./budget');
+  const now = new Date(2026, 10, 15);
+  const envelopes = [{ id: 't', categoryId: 'tobacco' }];
+  it('paquets achetés ce mois', () => {
+    const s = tobaccoStats({
+      profile: { tobaccoPackPrice: 13, tobaccoPacksPerWeek: 7 }, envelopes, now,
+      transactions: [{ envelopeId: 't', amount: 26, date: '2026-11-02' }, { envelopeId: 't', amount: 13, date: '2026-10-30' }],
+    });
+    expect(s.unitsMonth).toBe(2);
+    expect(s.expectedSoFar).toBeCloseTo(15);
+    expect(s.quit).toBeNull();
+  });
+  it('arrêt : jours et économies', () => {
+    const s = tobaccoStats({ profile: { tobaccoPackPrice: 14, tobaccoPacksPerWeek: 7, tobaccoQuitDate: '2026-11-01' }, envelopes, transactions: [], now });
+    expect(s.quit).toEqual({ days: 14, saved: 196, unitsAvoided: 14 });
+  });
+});

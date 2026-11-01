@@ -72,6 +72,7 @@ function TobaccoCard({ profile, envelopes, dispatch }) {
           {' '}({Math.floor(tobaccoEnv.budgetMonthly / (Number(draft.tobaccoPackPrice) || 1))} {getTobaccoType(draft.tobaccoType).unitPlural})
         </p>
       )}
+      <QuitTobacco profile={profile} tobaccoEnv={tobaccoEnv} dispatch={dispatch} />
       <div className="flex flex-wrap gap-2">
         <button className="btn-primary text-sm py-2" disabled={!dirty} onClick={() => save(false)}>Enregistrer</button>
         <button className="btn-secondary text-sm py-2" onClick={() => save(true)}>
@@ -249,6 +250,36 @@ function IdealSplitCard({ profile, dispatch }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Mode « j'arrête » : compteur de jours et d'économies, enveloppe tabac remise à zéro si souhaité
+function QuitTobacco({ profile, tobaccoEnv, dispatch }) {
+  if (profile.tobaccoQuitDate) {
+    const days = Math.max(0, Math.round((new Date() - new Date(`${String(profile.tobaccoQuitDate).slice(0, 10)}T00:00:00`)) / 86400000));
+    const saved = Math.round(days * ((Number(profile.tobaccoPacksPerWeek) || 0) / 7) * (Number(profile.tobaccoPackPrice) || 0));
+    return (
+      <div className="rounded-xl bg-savings/10 px-3 py-2.5 flex items-center justify-between gap-2">
+        <p className="text-sm text-savings font-medium">🎉 {days} jour{days > 1 ? 's' : ''} sans tabac · {fmt(saved)} économisés</p>
+        <button
+          className="text-xs text-slate-400 hover:text-slate-600 flex-shrink-0"
+          onClick={() => dispatch({ type: 'UPDATE_PROFILE', payload: { tobaccoQuitDate: '' } })}
+        >J'ai repris</button>
+      </div>
+    );
+  }
+  return (
+    <button
+      className="w-full rounded-xl border-2 border-dashed border-savings/40 text-savings text-sm font-medium py-2 hover:bg-savings/5"
+      onClick={() => {
+        dispatch({ type: 'UPDATE_PROFILE', payload: { tobaccoQuitDate: new Date().toISOString().slice(0, 10) } });
+        if (tobaccoEnv && tobaccoEnv.budgetMonthly > 0 && window.confirm('Mettre l\'enveloppe tabac à 0 € ? (l\'argent économisé reste dans ton budget)')) {
+          dispatch({ type: 'UPDATE_ENVELOPE', payload: { ...tobaccoEnv, budgetMonthly: 0 } });
+        }
+      }}
+    >
+      🚭 J'arrête de fumer — lancer le compteur
+    </button>
   );
 }
 

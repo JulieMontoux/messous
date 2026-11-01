@@ -4,11 +4,12 @@ import {
   fmt, totalFixedExSavings, totalProgrammedSavings,
   totalExpenseEnvelopes, totalSavingEnvelopesBudget,
   computedSavings, totalSavings, budgetHealth, HEALTH_CONFIG, donutData, weeklyAmount,
-  realSpending, envelopeForecast, periodDaysFor, idealSplit, pctLabel, carryoverFor, monthEndForecast, fmtDec,
+  realSpending, envelopeForecast, periodDaysFor, idealSplit, pctLabel, carryoverFor, monthEndForecast, fmtDec, tobaccoStats,
 } from '../utils/budget';
 import { periodStart, monthKey, previousMonthKey, isLastDayOfMonth, daysInMonth, addDays, toLocalDate, formatDay } from '../utils/period';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { getTobaccoType } from '../data/defaults';
 import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard, Landmark, Pencil } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -184,6 +185,37 @@ function ForecastCard({ state, dispatch }) {
   );
 }
 
+// Tabac : achats du mois, ou compteur d'arrêt
+function TobaccoTile({ state, navigate }) {
+  const { profile } = state;
+  if (!profile.isSmoker && !profile.tobaccoQuitDate) return null;
+  const s = tobaccoStats({ profile, envelopes: state.envelopes, transactions: state.transactions });
+  const unit = getTobaccoType(profile.tobaccoType);
+  if (s.quit) {
+    return (
+      <button onClick={() => navigate('settings')} className="w-full text-left rounded-2xl border border-savings/30 bg-savings/5 p-4 flex items-center gap-3">
+        <span className="text-2xl">🚭</span>
+        <div>
+          <p className="text-sm font-semibold text-slate-700">{s.quit.days} jour{s.quit.days > 1 ? 's' : ''} sans tabac</p>
+          <p className="text-xs text-slate-500">{fmt(s.quit.saved)} économisés · {s.quit.unitsAvoided} {s.quit.unitsAvoided > 1 ? unit.unitPlural : unit.unit} évité{s.quit.unitsAvoided > 1 ? 's' : ''}</p>
+        </div>
+      </button>
+    );
+  }
+  if (!s.spentMonth) return null;
+  const units = Math.round(s.unitsMonth * 10) / 10;
+  const expected = Math.round(s.expectedSoFar * 10) / 10;
+  return (
+    <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-4 flex items-center gap-3">
+      <span className="text-2xl">{unit.icon}</span>
+      <div className="flex-1">
+        <p className="text-sm font-semibold text-slate-700">≈ {units} {units > 1 ? unit.unitPlural : unit.unit} ce mois-ci</p>
+        <p className="text-xs text-slate-400">{fmt(s.spentMonth)} · rythme prévu à date : {expected}</p>
+      </div>
+    </div>
+  );
+}
+
 // Dépenses réelles du mois, en temps réel (enveloppes + carte non classée).
 // Le mois est en cours : la prévision reste indicative, seul un dépassement réel est signalé en rouge.
 function LiveMonthCard({ state, navigate }) {
@@ -321,6 +353,7 @@ export default function Dashboard({ navigate }) {
         <div className="lg:col-span-2 space-y-4">
           <LiveMonthCard state={state} navigate={navigate} />
           <ForecastCard state={state} dispatch={dispatch} />
+          <TobaccoTile state={state} navigate={navigate} />
 
           {/* Hero card salaire */}
           <div className="rounded-2xl bg-gradient-to-br from-primary to-primary-dark text-white p-6 shadow-lg">

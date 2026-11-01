@@ -351,3 +351,23 @@ export function goalPlan(goal, now = new Date()) {
   const late = remaining > 0 && needed != null && (contribution === 0 ? monthsLeft <= 0 : contribution + 0.5 < needed);
   return { remaining, contribution, monthsLeft, needed, reachMonth, late, shortfall: late && needed != null ? needed - contribution : 0 };
 }
+
+// Tabac : achats du mois (≈ nombre de paquets d'après le prix) et compteur d'arrêt
+export function tobaccoStats({ profile, envelopes, transactions, now = new Date() }) {
+  const price = Number(profile.tobaccoPackPrice) || 0;
+  const perWeek = Number(profile.tobaccoPacksPerWeek) || 0;
+  const env = envelopes.find(e => e.categoryId === 'tobacco');
+  const month = monthKey(now);
+  const spentMonth = env
+    ? transactions.filter(t => t.envelopeId === env.id && String(t.date).startsWith(month)).reduce((s, t) => s + Number(t.amount), 0)
+    : 0;
+  const unitsMonth = price > 0 ? spentMonth / price : 0;
+  const expectedSoFar = perWeek * (now.getDate() / 7);
+
+  let quit = null;
+  if (profile.tobaccoQuitDate) {
+    const days = Math.max(0, daysBetween(String(profile.tobaccoQuitDate).slice(0, 10), toLocalDate(now)));
+    quit = { days, saved: Math.round(days * (perWeek / 7) * price), unitsAvoided: Math.round(days * (perWeek / 7)) };
+  }
+  return { spentMonth, unitsMonth, expectedSoFar, quit };
+}
