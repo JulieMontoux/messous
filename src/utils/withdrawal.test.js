@@ -277,17 +277,17 @@ describe('ideal mode — group fully overspent', () => {
 
 // ─── GRAND TOTAL ROUNDING ────────────────────────────────────────────────────
 
-describe('grandTotal rounds UP to nearest 5', () => {
-  it('already multiple of 5 → unchanged', () => {
+describe('montants arrondis à la dizaine supérieure (pas de billets de 5 €)', () => {
+  it('déjà un multiple de 10 → inchangé', () => {
     const r = computeWithdrawal({
       envelopes: [{ id: 'e1', type: 'need', budgetMonthly: 300, categoryId: 'other' }],
       transactions: TXS, mode: 'monthly',
       idealNeeds: 500, idealWants: 300, idealSavings: 200,
     });
-    expect(r.envelopes.grandTotal % 5).toBe(0);
+    expect(r.envelopes.grandTotal % 10).toBe(0);
   });
 
-  it('297 → roundUp5 = 300', () => {
+  it('297 → 300', () => {
     mockSpent({ g1: 3 }); // budget=300, spent=3, toWithdraw=297
     const r = computeWithdrawal({
       envelopes: [grocery], transactions: TXS, mode: 'monthly',
@@ -296,13 +296,38 @@ describe('grandTotal rounds UP to nearest 5', () => {
     expect(r.envelopes.grandTotal).toBe(300);
   });
 
-  it('201 → roundUp5 = 205 (not 200)', () => {
-    mockSpent({ g1: 99 }); // budget=300, spent=99, toWithdraw=201
+  it('201 → 210 (et non 205)', () => {
+    mockSpent({ g1: 99 }); // budget=300, spent=99, reste 201
     const r = computeWithdrawal({
       envelopes: [grocery], transactions: TXS, mode: 'monthly',
       idealNeeds: 500, idealWants: 300, idealSavings: 200,
     });
-    expect(r.envelopes.grandTotal).toBe(205);
+    expect(r.envelopes.needs[0].toWithdraw).toBe(210);
+    expect(r.envelopes.grandTotal).toBe(210);
+  });
+
+  it('17 → 20 sur chaque ligne', () => {
+    mockSpent({ g1: 283 }); // budget=300, spent=283, reste 17
+    const r = computeWithdrawal({
+      envelopes: [grocery], transactions: TXS, mode: 'monthly',
+      idealNeeds: 500, idealWants: 300, idealSavings: 200,
+    });
+    expect(r.envelopes.needs[0].toWithdraw).toBe(20);
+  });
+
+  it('tous les montants sont des multiples de 10', () => {
+    mockSpent({ g1: 11, l1: 3, s1: 7, tb1: 1 });
+    const r = computeWithdrawal({
+      envelopes: [grocery, leisure, savingsE, tobaccoE], transactions: TXS, mode: 'weekly',
+      idealNeeds: 1003, idealWants: 607, idealSavings: 401,
+    });
+    const all = [
+      ...r.envelopes.needs, ...r.envelopes.wants, ...r.envelopes.savings,
+    ].map(e => e.toWithdraw).concat([
+      r.envelopes.tobacco.toWithdraw, r.envelopes.grandTotal,
+      r.ideal.needsToWithdraw, r.ideal.wantsToWithdraw, r.ideal.savingsToWithdraw, r.ideal.grandTotal,
+    ]);
+    all.forEach(v => expect(v % 10).toBe(0));
   });
 });
 

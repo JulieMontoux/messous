@@ -7,7 +7,7 @@ import {
   transactionsInPeriod, envelopeForecast, periodDaysFor,
 } from '../utils/budget';
 import { periodStart, periodEnd, lastWithdrawal, toLocalDate, monthKey, formatDay, isCutByClosure } from '../utils/period';
-import { computeWithdrawal } from '../utils/withdrawal';
+import { computeWithdrawal, roundUpBill } from '../utils/withdrawal';
 import { api } from '../api/client';
 import { cn } from '../lib/utils';
 import Modal from '../components/Modal';
@@ -34,7 +34,6 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
   const [mode, setMode] = useState(viewMode);
   const [calcMode, setCalcMode] = useState('ideal');
   const [record, setRecord] = useState({ date: toLocalDate(), amount: '', note: '' });
-  const roundUp5 = v => Math.ceil(v / 5) * 5;
   const periodLabel = mode === 'weekly' ? '/ semaine' : '/ mois';
   const isIdeal = calcMode === 'ideal';
 
@@ -63,7 +62,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
   const needsTotal = envResult.needsTotal;
   const pleasuresTotal = isIdeal ? pleasuresIdealToWithdraw : envResult.wantsTotal;
   const savingsTotal = isIdeal ? savingsIdealToWithdraw : envResult.savingsTotal;
-  const grandTotal = roundUp5(Math.max(0, needsTotal + tobaccoToWithdraw + pleasuresTotal + savingsTotal - cashInHand));
+  const grandTotal = roundUpBill(Math.max(0, needsTotal + tobaccoToWithdraw + pleasuresTotal + savingsTotal - cashInHand));
 
   const hasAnySpending = [...needsData, ...wantData, ...savingData].some(e => e.spent > 0) || tobaccoSpent > 0;
   const recordAmount = record.amount === '' ? grandTotal : Number(record.amount);
@@ -275,7 +274,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
               className="input font-semibold"
               type="number"
               min="0"
-              step="5"
+              step="10"
               placeholder={String(grandTotal)}
               value={record.amount}
               onChange={e => setRecord(r => ({ ...r, amount: e.target.value }))}
