@@ -11,6 +11,9 @@ RUN npm ci --omit=dev && npm cache clean --force \
             /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn* /root/.npm \
   && apk upgrade --no-cache
 COPY src ./src
+# Lisible par l'utilisateur node quels que soient les droits des fichiers sur le serveur
+# (ex. fichier en 600 copié par scp), sans lui donner le droit d'écrire
+RUN chmod -R a+rX,go-w /app
 # Pas de droits root dans le conteneur
 USER node
 EXPOSE 3001

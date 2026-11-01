@@ -193,6 +193,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+      - name: Fichiers en lecture seule pour root (comme un fichier copié par scp sur le serveur)
+        run: find . -path ./.git -prune -o -type f -print0 | xargs -0 chmod 600
       - name: Build de l'image ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
@@ -203,6 +205,23 @@ jobs:
           tags: messous-${{ matrix.name }}:ci
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: L'image démarre sans droits root
+        run: |
+          if [ "${{ matrix.name }}" = api ]; then
+            # Tous les fichiers de l'app lisibles par l'utilisateur node, et l'app se charge
+            docker run --rm --entrypoint node messous-api:ci -e "
+              const fs = require('fs'), path = require('path');
+              (function walk(d) { for (const f of fs.readdirSync(d)) {
+                const p = path.join(d, f); fs.statSync(p).isDirectory() ? walk(p) : fs.readFileSync(p); } })('/app');
+              require('/app/src/app'); console.log('API OK (utilisateur', require('os').userInfo().username + ')');"
+          else
+            docker run -d --name front-smoke -p 8080:8080 messous-frontend:ci
+            for i in $(seq 1 20); do
+              if curl -fsS http://localhost:8080/ | grep -q '<div id="root">'; then echo "Front OK"; exit 0; fi
+              sleep 1
+            done
+            docker logs front-smoke; exit 1
+          fi
       - name: Trivy — CVE de l'image (paquets système et Node)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (épinglé par SHA)
         with:
