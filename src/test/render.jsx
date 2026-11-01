@@ -13,9 +13,10 @@ export function freezeDate(iso = `${TODAY}T12:00:00`) {
   vi.setSystemTime(new Date(iso));
 }
 
-function ReadyProbe() {
+// Comme l'application : la page n'est affichée qu'une fois les données chargées
+function Gate({ children }) {
   const { ready } = useBudget();
-  return ready ? <span data-testid="budget-ready" hidden /> : null;
+  return ready ? <><span data-testid="budget-ready" hidden />{children}</> : null;
 }
 
 export async function renderPage(Page, { api, params = {}, wait = true, date } = {}) {
@@ -27,8 +28,7 @@ export async function renderPage(Page, { api, params = {}, wait = true, date } =
   const utils = render(
     <AuthProvider>
       <BudgetProvider>
-        <ReadyProbe />
-        <Page navigate={navigate} params={params} />
+        <Gate><Page navigate={navigate} params={params} /></Gate>
       </BudgetProvider>
     </AuthProvider>
   );
@@ -48,4 +48,11 @@ export function field(labelText, root = document.body) {
   const el = label.querySelector('input,select,textarea') || label.parentElement.querySelector('input,select,textarea');
   if (!el) throw new Error(`Champ introuvable pour : ${labelText}`);
   return el;
+}
+
+// Fenêtre modale ouverte (la dernière)
+export function modal() {
+  const all = document.querySelectorAll('.fixed.inset-0.z-50 .relative');
+  if (!all.length) throw new Error('Aucune fenêtre ouverte');
+  return all[all.length - 1];
 }

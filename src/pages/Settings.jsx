@@ -593,7 +593,7 @@ export default function Settings() {
       </div>
 
       <div className="space-y-4">
-      {profile.isSmoker && <TobaccoCard key={profile.tobaccoType} profile={profile} envelopes={envelopes} dispatch={dispatch} />}
+      {profile.isSmoker && <TobaccoCard profile={profile} envelopes={envelopes} dispatch={dispatch} />}
 
       <IdealSplitCard profile={profile} dispatch={dispatch} />
 

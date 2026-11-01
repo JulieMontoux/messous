@@ -31,7 +31,9 @@ function CloseMonthModal({ snap, envelopes, transactions, carryovers, onSave, on
   const [carry, setCarry] = useState(() => Object.fromEntries(
     leftovers.map(({ env }) => [env.id, carryoverFor(carryovers, env.id, nextMonth) || ''])
   ));
-  const carryTotal = Object.values(carry).reduce((s, v) => s + (Number(v) || 0), 0);
+  // Case cochée séparée du montant : vider le champ pour retaper un montant ne décoche pas
+  const [checked, setChecked] = useState(() => new Set(Object.keys(carry).filter(id => Number(carry[id]) > 0)));
+  const carryTotal = [...checked].reduce((s, id) => s + (Number(carry[id]) || 0), 0);
   const [form, setForm] = useState({
     actualSavings: snap.actualSavings ?? planned,
     actualRemainder: snap.actualRemainder ?? Math.max(0, snap.remainder || 0),
@@ -57,7 +59,7 @@ function CloseMonthModal({ snap, envelopes, transactions, carryovers, onSave, on
               actualSavings: Number(form.actualSavings) || 0,
               actualRemainder: Number(form.actualRemainder) || 0,
               remainderToGoalId: form.remainderToGoalId || null,
-              carryovers: Object.entries(carry).map(([envelopeId, amount]) => ({ envelopeId, amount: Number(amount) || 0 })),
+              carryovers: Object.entries(carry).map(([envelopeId, amount]) => ({ envelopeId, amount: checked.has(envelopeId) ? Number(amount) || 0 : 0 })),
             })}
           >Enregistrer</button>
         </>
@@ -84,7 +86,7 @@ function CloseMonthModal({ snap, envelopes, transactions, carryovers, onSave, on
           <p className="text-xs text-slate-400 mb-2">Le montant reporté s'ajoute au budget de l'enveloppe le mois suivant (ex. vacances, cadeaux).</p>
           <div className="space-y-1.5">
             {leftovers.map(({ env, left }) => {
-              const on = Number(carry[env.id]) > 0;
+              const on = checked.has(env.id);
               return (
                 <div key={env.id} className="flex items-center gap-2">
                   <label className="flex items-center gap-2 flex-1 min-w-0 text-sm text-slate-600 cursor-pointer">
@@ -92,7 +94,14 @@ function CloseMonthModal({ snap, envelopes, transactions, carryovers, onSave, on
                       type="checkbox"
                       className="w-4 h-4 accent-primary"
                       checked={on}
-                      onChange={() => setCarry(c => ({ ...c, [env.id]: on ? '' : left }))}
+                      onChange={() => {
+                        setChecked(prev => {
+                          const next = new Set(prev);
+                          if (on) next.delete(env.id); else next.add(env.id);
+                          return next;
+                        });
+                        if (!on) setCarry(c => ({ ...c, [env.id]: left }));
+                      }}
                     />
                     <span className="truncate">{env.icon || ''} {env.name}</span>
                     <span className="text-xs text-slate-400 flex-shrink-0">reste {fmt(left)}</span>
