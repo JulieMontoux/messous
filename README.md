@@ -19,7 +19,20 @@ paiements carte, objectifs d'épargne et historique.
 | **E-mail du dernier jour du mois** (à 18 h) pour enregistrer l'épargne réelle | automatique |
 | **Profil tabac** : roulé / tubé / industriel, prix unitaire et consommation modifiables, ajustement de l'enveloppe tabac | Profil, Astuces |
 | **Alertes e-mail** : enveloppe au seuil (70/80/90 %) puis dépassée ; tabac : plus de quoi acheter un paquet | Profil → Alertes & e-mails |
+| **Clôture du mois** : report des restes d'enveloppes sur le mois suivant (s'ajoute au budget de l'enveloppe) | Historique |
+| **Salaire à date d'effet** (immédiat ou à partir d'un mois futur) et détection du virement de salaire sur le relevé | Profil, Tableau de bord |
+| **Budget idéal réglable** (50/30/20 par défaut) et arrondi des retraits à la dizaine (option) | Profil |
+| **Charges fixes** mensuelles, trimestrielles ou annuelles, avec mois de fin prévu (crédit, engagement) | Charges fixes |
+| **E-mail avant l'expiration** de la connexion bancaire (7 jours avant les 180 jours DSP2) | automatique |
+| **App installable** sur téléphone / ordinateur (« Ajouter à l'écran d'accueil ») | navigateur |
 | **Rechargement automatique** : le serveur se met à jour tout seul à chaque push, et l'app ouverte dans le navigateur se recharge sur la nouvelle version | voir plus bas |
+
+## Sécurité
+
+- Connexion : 10 échecs max par compte (30 par IP) sur 15 min, 5 inscriptions par heure et par IP.
+- CORS désactivé par défaut (le front et l'API partagent le domaine) ; `CORS_ORIGIN` pour l'ouvrir.
+- `JWT_SECRET` : 32 caractères minimum (`openssl rand -hex 32`), un avertissement s'affiche sinon.
+- En-têtes de sécurité ajoutés par nginx.
 
 ## Développement
 
@@ -29,7 +42,10 @@ cp api/.env.example api/.env   # DATABASE_URL, JWT_SECRET…
 (cd api && npm run dev)        # API sur :3001
 npm run dev                    # front sur :5173 (proxy /api → :3001)
 npm test                       # tests des calculs (vitest)
+(cd api && DATABASE_URL=postgres://… npm test)   # tests de l'API sur une vraie base PostgreSQL
 ```
+
+Les tests (front + API) tournent automatiquement sur GitHub à chaque pull request (`.github/workflows/ci.yml`).
 
 ## Déploiement (conteneur Proxmox)
 
