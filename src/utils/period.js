@@ -60,14 +60,32 @@ export function weekStart(now = new Date(), withdrawals = []) {
   return addDays(last.date, Math.floor(elapsed / 7) * 7);
 }
 
-export function periodStart(mode, { now = new Date(), withdrawals = [] } = {}) {
-  if (mode === 'weekly') return weekStart(now, withdrawals);
-  return `${monthKey(now)}-01`;
+// 1er jour du mois qui suit le dernier mois clôturé : rien d'antérieur ne doit plus être décompté
+export function closedCutoff(savingsHistory = []) {
+  const last = savingsHistory.filter(s => s.closedAt).map(s => s.month).sort().pop();
+  if (!last) return null;
+  const [y, m] = last.split('-').map(Number);
+  return `${monthKey(new Date(y, m, 1))}-01`;
+}
+
+// Début de période (mois, ou semaine calée sur le dernier retrait), jamais avant la fin
+// du dernier mois clôturé
+export function periodStart(mode, { now = new Date(), withdrawals = [], savingsHistory = [] } = {}) {
+  const base = mode === 'weekly' ? weekStart(now, withdrawals) : `${monthKey(now)}-01`;
+  const cutoff = closedCutoff(savingsHistory);
+  return cutoff && cutoff > base ? cutoff : base;
+}
+
+// La période a-t-elle été raccourcie par la clôture du mois précédent ?
+export function isCutByClosure(mode, opts = {}) {
+  const { now = new Date(), withdrawals = [] } = opts;
+  const base = mode === 'weekly' ? weekStart(now, withdrawals) : `${monthKey(now)}-01`;
+  return periodStart(mode, opts) !== base;
 }
 
 export function periodEnd(mode, opts = {}) {
   const { now = new Date() } = opts;
-  if (mode === 'weekly') return addDays(periodStart(mode, opts), 6);
+  if (mode === 'weekly') return addDays(weekStart(now, opts.withdrawals || []), 6);
   return `${monthKey(now)}-${pad(daysInMonth(now))}`;
 }
 

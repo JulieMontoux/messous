@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { weekStart, periodStart, periodEnd, mondayOf, lastWithdrawal, isLastDayOfMonth, addDays } from './period';
+import { weekStart, periodStart, periodEnd, mondayOf, lastWithdrawal, isLastDayOfMonth, addDays, isCutByClosure } from './period';
 import { spentInPeriod, envelopeForecast, realSpending, monthlyAmount, totalFixed, isDueInMonth } from './budget';
 
 // Jeudi 30 octobre 2026
@@ -121,5 +121,33 @@ describe('realSpending ignore les paiements rattachés à une charge fixe', () =
       bankTransactions: [{ date: '2026-10-05', amount: -99, isCard: true, envelopeId: null, fixedChargeId: 'f1', ignored: false }],
     });
     expect(r.total).toBe(0);
+  });
+});
+
+describe('mois précédent clôturé', () => {
+  // Dimanche 1er novembre 2026, dernier retrait le jeudi 29 octobre
+  const nov1 = new Date(2026, 10, 1, 10, 0);
+  const withdrawals = [{ date: '2026-10-29' }];
+  const closedOct = [{ month: '2026-10', closedAt: '2026-10-31T20:00:00Z' }];
+
+  it('sans clôture, la semaine démarre au retrait d\'octobre', () => {
+    expect(periodStart('weekly', { now: nov1, withdrawals })).toBe('2026-10-29');
+  });
+
+  it('octobre clôturé → plus rien d\'octobre n\'est décompté', () => {
+    expect(periodStart('weekly', { now: nov1, withdrawals, savingsHistory: closedOct })).toBe('2026-11-01');
+    expect(isCutByClosure('weekly', { now: nov1, withdrawals, savingsHistory: closedOct })).toBe(true);
+    // la fin de semaine reste calée sur le cycle du retrait
+    expect(periodEnd('weekly', { now: nov1, withdrawals })).toBe('2026-11-04');
+  });
+
+  it('un mois non clôturé n\'a aucun effet', () => {
+    expect(periodStart('weekly', { now: nov1, withdrawals, savingsHistory: [{ month: '2026-10' }] })).toBe('2026-10-29');
+  });
+
+  it('épargne versée fin octobre non décomptée en novembre', () => {
+    const since = periodStart('weekly', { now: nov1, withdrawals, savingsHistory: closedOct });
+    const txs = [{ envelopeId: 's', amount: 234, date: '2026-10-31' }];
+    expect(spentInPeriod(txs, 's', 'weekly', { since })).toBe(0);
   });
 });

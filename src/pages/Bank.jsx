@@ -445,7 +445,7 @@ export default function Bank({ params = {} }) {
   }
 
   const monthStart = periodStart('monthly');
-  const weekSince = periodStart('weekly', { withdrawals: state.withdrawals });
+  const weekSince = periodStart('weekly', { withdrawals: state.withdrawals, savingsHistory: state.savingsHistory });
   const month = useMemo(() => realSpending({ transactions, envelopes, bankTransactions, since: monthStart }), [transactions, envelopes, bankTransactions, monthStart]);
   const week = useMemo(() => realSpending({ transactions, envelopes, bankTransactions, since: weekSince }), [transactions, envelopes, bankTransactions, weekSince]);
   const todoCount = bankTransactions.filter(isTodo).length;
