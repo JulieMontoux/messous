@@ -52,7 +52,7 @@ export function field(labelText, root = document.body) {
 
 // Fenêtre modale ouverte (la dernière)
 export function modal() {
-  const all = document.querySelectorAll('.fixed.inset-0.z-50 .relative');
+  const all = document.querySelectorAll('.fixed.inset-0.z-50 > .relative');
   if (!all.length) throw new Error('Aucune fenêtre ouverte');
   return all[all.length - 1];
 }
