@@ -71,6 +71,26 @@ test('clé privée lue depuis un fichier si pas en variable', async () => {
   }
 });
 
+test('clé privée illisible, absente ou invalide : message explicite', async (t) => {
+  const saved = process.env.ENABLE_BANKING_PRIVATE_KEY;
+  delete process.env.ENABLE_BANKING_PRIVATE_KEY;
+  process.env.ENABLE_BANKING_KEY_PATH = '/run/secrets/enablebanking.pem';
+  try {
+    const fail = code => t.mock.method(fs, 'readFileSync', () => { throw Object.assign(new Error(code), { code }); });
+    let m = fail('EACCES');
+    await assert.rejects(eb.listBanks(), /illisible.*chown 1000:1000/);
+    m.mock.restore();
+    m = fail('ENOENT');
+    await assert.rejects(eb.listBanks(), /introuvable : \/run\/secrets\/enablebanking\.pem/);
+    m.mock.restore();
+    fail('EISDIR');
+    await assert.rejects(eb.listBanks(), /EISDIR/);
+  } finally {
+    process.env.ENABLE_BANKING_PRIVATE_KEY = saved;
+    delete process.env.ENABLE_BANKING_KEY_PATH;
+  }
+});
+
 test('erreur de l\'API bancaire : message remonté', async () => {
   mockBank({ 'GET /aspsps': { status: 401, body: { message: 'Signature invalide' } } });
   await assert.rejects(eb.listBanks(), /Signature invalide/);

@@ -51,6 +51,14 @@ fi
 echo "[$(date '+%F %T')] Mise à jour ${LOCAL:0:7} → ${REMOTE:0:7} ($BRANCH)"
 git pull --ff-only --quiet origin "$BRANCH"
 
+# La clé bancaire est montée dans l'API, qui tourne sous l'utilisateur node (uid 1000) :
+# elle doit lui appartenir, en lecture seule, et rester illisible pour les autres.
+if [ -d "$APP_DIR/secrets" ]; then
+  chown -R 1000:1000 "$APP_DIR/secrets"
+  chmod 700 "$APP_DIR/secrets"
+  find "$APP_DIR/secrets" -type f -exec chmod 400 {} +
+fi
+
 export APP_VERSION
 APP_VERSION="$(git rev-parse --short HEAD)-$(date +%s)"
 docker compose up -d --build --remove-orphans

@@ -121,8 +121,10 @@ function BottomNav({ page, onNavigate, unclassified }) {
       {moreOpen && (
         <div className="lg:hidden fixed inset-0 z-40" onClick={() => setMoreOpen(false)}>
           <div className="absolute inset-0 bg-black/30" />
+          {/* Au-dessus de la barre du bas, y compris la zone de l'indicateur d'accueil (iPhone) */}
           <div
-            className="absolute bottom-[68px] left-3 right-3 bg-white rounded-2xl shadow-xl p-2 grid grid-cols-3 gap-1"
+            data-testid="more-menu"
+            className="absolute bottom-[calc(4.75rem+var(--sab))] left-3 right-3 max-h-[calc(100dvh-7rem-var(--sab))] overflow-y-auto bg-white rounded-2xl shadow-xl p-2 grid grid-cols-3 gap-1"
             onClick={e => e.stopPropagation()}
           >
             {more.map(({ id, short, icon: Icon }) => (
@@ -148,7 +150,7 @@ function BottomNav({ page, onNavigate, unclassified }) {
           </div>
         </div>
       )}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-slate-100 z-40 pb-[env(safe-area-inset-bottom)]">
+      <nav data-testid="bottom-nav" className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-slate-100 z-50 pb-[var(--sab)]">
         <div className="grid grid-cols-5 px-1 py-1.5">
           {main.map(({ id, short, icon: Icon }) => {
             const active = page === id;
@@ -224,7 +226,7 @@ export default function Layout({ page, onNavigate, children }) {
 
       <main className={cn(
         'min-h-screen transition-all duration-300',
-        'pb-24 lg:pb-8',
+        'pb-[calc(6rem+var(--sab))] lg:pb-8',
         collapsed ? 'lg:ml-[68px]' : 'lg:ml-[220px]'
       )}>
         <div className="max-w-5xl mx-auto px-4 lg:px-8">
