@@ -296,6 +296,12 @@ function AlertsCard({ profile, dispatch }) {
         </div>
       )}
       <Toggle
+        label="📊 Bilan mensuel"
+        sub="Le 1er du mois : dépenses par enveloppe, dépassements, épargne et comparaison avec le mois d'avant"
+        value={profile.monthlyReportEmail !== false}
+        onChange={v => update({ monthlyReportEmail: v })}
+      />
+      <Toggle
         label="🐷 Rappel de fin de mois"
         sub="Le dernier jour du mois, un e-mail pour enregistrer l'épargne réelle et le reste"
         value={profile.monthEndEmail}

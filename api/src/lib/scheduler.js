@@ -2,6 +2,7 @@ const { pool } = require('../db');
 const { sendOnce, layout, appUrl } = require('./mailer');
 const { monthKey, isLastDayOfMonth } = require('./dates');
 const { syncConnection } = require('./bank/sync');
+const { buildMonthlyReport, renderMonthlyReport, shiftMonth } = require('./report');
 
 const eur = v => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v);
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -30,6 +31,19 @@ async function monthEndReminders(now = new Date()) {
         { href: appUrl(`/?page=history&close=${month}`), label: 'Enregistrer mon épargne' }
       ),
     }));
+  }
+}
+
+// Le 1er du mois, à partir de MONTHLY_REPORT_HOUR (9 h) : bilan du mois écoulé par e-mail
+async function monthlyReports(now = new Date()) {
+  if (now.getDate() !== 1 || now.getHours() < (Number(process.env.MONTHLY_REPORT_HOUR) || 9)) return;
+  const month = shiftMonth(monthKey(now), -1);
+  const { rows } = await pool.query(
+    'SELECT user_id FROM profiles WHERE onboarding_done = true AND COALESCE(monthly_report_email, true) = true'
+  );
+  for (const { user_id: userId } of rows) {
+    await sendOnce(userId, 'monthly_report', month, async ({ firstName }) =>
+      renderMonthlyReport(await buildMonthlyReport(userId, month), firstName));
   }
 }
 
@@ -75,6 +89,7 @@ async function bankAutoSync() {
 
 async function tick() {
   await monthEndReminders().catch(err => console.error('[scheduler] month-end', err.message));
+  await monthlyReports().catch(err => console.error('[scheduler] monthly report', err.message));
   await bankExpiryReminders().catch(err => console.error('[scheduler] bank expiry', err.message));
   await bankAutoSync().catch(err => console.error('[scheduler] bank', err.message));
 }
@@ -84,4 +99,4 @@ function startScheduler() {
   setInterval(tick, 15 * 60 * 1000);
 }
 
-module.exports = { startScheduler, monthEndReminders, bankExpiryReminders };
+module.exports = { startScheduler, monthEndReminders, bankExpiryReminders, monthlyReports };

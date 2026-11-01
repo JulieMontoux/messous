@@ -49,3 +49,25 @@ test('clôture du mois : restes reportés sur le mois suivant, remplacés si on 
   list = (await u.get('/api/envelopes/carryovers').expect(200)).body;
   assert.equal(list.length, 0);
 });
+
+test('bilan mensuel : dépenses par enveloppe, dépassements, comparaison avec le mois précédent', async () => {
+  const { renderMonthlyReport, shiftMonth } = require('../src/lib/report');
+  const u = await newUser();
+  const courses = (await u.post('/api/envelopes', { name: 'Courses', categoryId: 'groceries', type: 'need', budgetMonthly: 300 })).body;
+  const restos = (await u.post('/api/envelopes', { name: 'Restos', categoryId: 'restaurant', type: 'want', budgetMonthly: 100 })).body;
+  const before = shiftMonth(prevMonth, -1);
+  await u.post('/api/transactions', { envelopeId: courses.id, amount: 250, date: `${prevMonth}-05` });
+  await u.post('/api/transactions', { envelopeId: restos.id, amount: 140, date: `${prevMonth}-12` });
+  await u.post('/api/transactions', { envelopeId: courses.id, amount: 300, date: `${before}-10` });
+
+  const r = (await u.get(`/api/savings/${prevMonth}/report`).expect(200)).body;
+  assert.equal(r.totalSpent, 390);
+  assert.equal(r.totalBudget, 400);
+  assert.equal(r.previousSpent, 300);
+  assert.deepEqual(r.over.map(l => l.name), ['Restos']);
+
+  const mail = renderMonthlyReport(r, 'Julie');
+  assert.match(mail.subject, /bilan/);
+  assert.match(mail.html, /\+30 %/);
+  assert.match(mail.html, /Restos \(40/);
+});

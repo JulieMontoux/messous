@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { pool } = require('../db');
 const auth = require('../middleware/auth');
+const { buildMonthlyReport } = require('../lib/report');
 
 router.use(auth);
 
@@ -27,6 +28,14 @@ router.get('/', async (req, res) => {
       [req.user.userId]
     );
     res.json(rows.map(toClient));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Bilan d'un mois (même contenu que l'e-mail du 1er du mois)
+router.get('/:month/report', async (req, res) => {
+  try {
+    if (!/^\d{4}-\d{2}$/.test(req.params.month)) return res.status(400).json({ error: 'Mois invalide' });
+    res.json(await buildMonthlyReport(req.user.userId, req.params.month));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
