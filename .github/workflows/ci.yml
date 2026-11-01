@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
       - run: npm ci
       - name: Lint front, API et tests (erreurs bloquantes)
@@ -58,7 +58,7 @@ jobs:
     needs: [lint, secrets]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
       - run: npm ci
       - name: Tests + seuil de couverture (80 % par fichier)
@@ -89,7 +89,7 @@ jobs:
       TZ: Europe/Paris
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: '${{ env.NODE_VERSION }}', cache: npm, cache-dependency-path: api/package-lock.json }
       - run: npm ci
       - name: Tests + seuil de couverture (80 % par fichier)
@@ -104,7 +104,7 @@ jobs:
     needs: [test-front, test-api]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: '${{ env.NODE_VERSION }}' }
       - name: npm audit — front (toutes les dépendances)
         run: npm audit --audit-level=high
@@ -232,7 +232,7 @@ jobs:
       TZ: Europe/Paris
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: '${{ env.NODE_VERSION }}', cache: npm }
       - run: npm ci
       - run: npm ci
