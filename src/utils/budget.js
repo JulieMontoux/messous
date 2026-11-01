@@ -332,3 +332,22 @@ export function spendingTrends(transactions, envelopes, now = new Date()) {
     .filter(t => t.last > 0 || t.avg > 0)
     .sort((a, b) => Math.abs(b.last - b.avg) - Math.abs(a.last - a.avg));
 }
+
+// Plan d'un objectif : versement nécessaire pour tenir la date, date atteinte au rythme prévu, retard
+export function goalPlan(goal, now = new Date()) {
+  const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
+  const contribution = Number(goal.monthlyContribution) || 0;
+  let monthsLeft = null;
+  if (goal.targetDate) {
+    const [y, m] = goal.targetDate.split('-').map(Number);
+    monthsLeft = (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth());
+  }
+  const needed = remaining > 0 && monthsLeft != null ? remaining / Math.max(1, monthsLeft) : null;
+  let reachMonth = null;
+  if (remaining > 0 && contribution > 0) {
+    const n = Math.ceil(remaining / contribution);
+    reachMonth = monthKey(new Date(now.getFullYear(), now.getMonth() + n, 1));
+  }
+  const late = remaining > 0 && needed != null && (contribution === 0 ? monthsLeft <= 0 : contribution + 0.5 < needed);
+  return { remaining, contribution, monthsLeft, needed, reachMonth, late, shortfall: late && needed != null ? needed - contribution : 0 };
+}

@@ -71,3 +71,11 @@ test('bilan mensuel : dépenses par enveloppe, dépassements, comparaison avec l
   assert.match(mail.html, /\+30 %/);
   assert.match(mail.html, /Restos \(40/);
 });
+
+test('objectifs : versement mensuel prévu et versement ponctuel (PATCH)', async () => {
+  const u = await newUser();
+  const g = (await u.post('/api/goals', { name: 'Vacances', targetAmount: 1000, monthlyContribution: 80 }).expect(200)).body;
+  assert.equal(g.monthlyContribution, 80);
+  const after = (await u.patch(`/api/goals/${g.id}/deposit`, { amount: 150 }).expect(200)).body;
+  assert.equal(after.currentAmount, 150);
+});

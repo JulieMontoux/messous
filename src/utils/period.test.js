@@ -257,3 +257,21 @@ describe('tendances', async () => {
     expect(t.change).toBeCloseTo(0.5);
   });
 });
+
+describe('objectifs', async () => {
+  const { goalPlan } = await import('./budget');
+  const now = new Date(2026, 10, 10);
+  it('versement nécessaire et retard', () => {
+    const p = goalPlan({ targetAmount: 1200, currentAmount: 200, targetDate: '2027-05-01', monthlyContribution: 100 }, now);
+    expect(p.monthsLeft).toBe(6);
+    expect(Math.round(p.needed)).toBe(167);
+    expect(p.late).toBe(true);
+    expect(Math.round(p.shortfall)).toBe(67);
+    expect(p.reachMonth).toBe('2027-09');
+  });
+  it('dans les temps', () => {
+    const p = goalPlan({ targetAmount: 1200, currentAmount: 200, targetDate: '2027-05-01', monthlyContribution: 200 }, now);
+    expect(p.late).toBe(false);
+    expect(p.reachMonth).toBe('2027-04');
+  });
+});

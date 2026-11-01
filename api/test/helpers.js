@@ -26,7 +26,7 @@ async function newUser() {
     const r = request(app)[method](path).set(auth);
     return body !== undefined ? r.send(body) : r;
   };
-  return { email, password, token: res.body.token, get: call('get'), post: call('post'), put: call('put'), del: call('delete') };
+  return { email, password, token: res.body.token, get: call('get'), post: call('post'), put: call('put'), patch: call('patch'), del: call('delete') };
 }
 
 function csvBody(lines, accountName = 'Compte test') {
