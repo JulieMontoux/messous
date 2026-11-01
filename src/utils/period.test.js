@@ -228,3 +228,32 @@ describe('solde prévisionnel de fin de mois', async () => {
     expect(monthEndForecast({ balance: null, charges: [], envelopes: [], transactions: [], now }).forecast).toBeNull();
   });
 });
+
+describe('tendances', async () => {
+  const { monthlySpendingSeries, spendingTrends } = await import('./budget');
+  const now = new Date(2026, 10, 10);
+  const envelopes = [{ id: 'c', type: 'need', name: 'Courses' }, { id: 's', type: 'saving', name: 'Livret' }];
+  const tx = [
+    { envelopeId: 'c', amount: 100, date: '2026-07-03' },
+    { envelopeId: 'c', amount: 100, date: '2026-08-03' },
+    { envelopeId: 'c', amount: 100, date: '2026-09-03' },
+    { envelopeId: 'c', amount: 150, date: '2026-10-03' },
+    { envelopeId: 'c', amount: 20, date: '2026-11-03' },
+    { envelopeId: 's', amount: 500, date: '2026-10-03' },
+    { envelopeId: 'c', amount: 999, date: '2025-01-03' },
+  ];
+  it('série mensuelle (épargne exclue du total)', () => {
+    const s = monthlySpendingSeries(tx, envelopes, { now });
+    expect(s).toHaveLength(12);
+    expect(s[11]).toEqual({ month: '2026-11', total: 20 });
+    expect(s[10]).toEqual({ month: '2026-10', total: 150 });
+    expect(s[0].month).toBe('2025-12');
+  });
+  it('évolution du dernier mois terminé vs moyenne des 3 précédents', () => {
+    const [t] = spendingTrends(tx, envelopes, now);
+    expect(t.envelope.id).toBe('c');
+    expect(t.last).toBe(150);
+    expect(t.avg).toBe(100);
+    expect(t.change).toBeCloseTo(0.5);
+  });
+});

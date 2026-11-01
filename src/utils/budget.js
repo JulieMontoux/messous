@@ -302,3 +302,33 @@ export function monthEndForecast({ balance, charges, envelopes, transactions, ca
     forecast: balance == null ? null : balance - chargesLeft - envelopesFromAccount - savingsLeft,
   };
 }
+
+// Dépenses par mois sur les `count` derniers mois (mois en cours inclus), par enveloppe ou au total
+export function monthlySpendingSeries(transactions, envelopes, { envelopeId = null, count = 12, now = new Date() } = {}) {
+  const savingIds = new Set(envelopes.filter(e => e.type === 'saving').map(e => e.id));
+  const months = [];
+  for (let i = count - 1; i >= 0; i--) months.push(monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
+  const totals = Object.fromEntries(months.map(m => [m, 0]));
+  for (const t of transactions) {
+    const m = String(t.date).slice(0, 7);
+    if (!(m in totals)) continue;
+    if (envelopeId ? t.envelopeId !== envelopeId : savingIds.has(t.envelopeId)) continue;
+    totals[m] += Number(t.amount) || 0;
+  }
+  return months.map(m => ({ month: m, total: Math.round(totals[m] * 100) / 100 }));
+}
+
+// Évolution par enveloppe : dernier mois terminé vs moyenne des 3 mois précédents
+export function spendingTrends(transactions, envelopes, now = new Date()) {
+  return envelopes
+    .filter(e => e.type !== 'saving')
+    .map(e => {
+      const series = monthlySpendingSeries(transactions, envelopes, { envelopeId: e.id, count: 5, now });
+      const last = series[3].total;
+      const prev = series.slice(0, 3).map(x => x.total);
+      const avg = prev.reduce((s, v) => s + v, 0) / 3;
+      return { envelope: e, last, avg, change: avg > 0 ? (last - avg) / avg : null };
+    })
+    .filter(t => t.last > 0 || t.avg > 0)
+    .sort((a, b) => Math.abs(b.last - b.avg) - Math.abs(a.last - a.avg));
+}

@@ -6,6 +6,7 @@ import { fmt, realSavings, carryoverFor } from '../utils/budget';
 import { api } from '../api/client';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
+import TrendsCard from '../components/TrendsCard';
 
 // Reste de chaque enveloppe (hors épargne) sur le mois : budget + report reçu − dépenses du mois
 function envelopeLeftovers(envelopes, transactions, carryovers, month) {
@@ -229,6 +230,8 @@ export default function History({ params = {} }) {
           <ClipboardCheck size={15} /> {currentSnap?.closedAt ? 'Modifier la clôture' : 'Clôturer le mois'}
         </button>
       </PageHeader>
+
+      <TrendsCard transactions={transactions} envelopes={envelopes} />
 
       {history.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
