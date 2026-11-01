@@ -1,5 +1,3 @@
-export const LAST_UPDATE = '1er septembre 2026';
-
 // Source : arrêté du 5 août 2026, DGDDI — prix homologués paquet de 20 cigarettes
 // Profil "filtre blanc, légères, format standard" = Marlboro Crafted et alternatives
 export const TOBACCO_PRICES = [
@@ -64,11 +62,3 @@ export const SAVINGS_TIPS = [
   { tip: 'Règle des 24h avant achat plaisir > 50€', icon: '⏳', cta: null },
   { tip: 'PEA : investissement actions avec fiscalité avantageuse après 5 ans', icon: '📈', cta: null },
 ];
-
-export function tobaccoMonthlyCost(packsPerDay, brandPrice) {
-  return Math.round(packsPerDay * brandPrice * 30.4 * 100) / 100;
-}
-
-export function tobaccoYearlyCost(packsPerDay, brandPrice) {
-  return Math.round(packsPerDay * brandPrice * 365 * 100) / 100;
-}

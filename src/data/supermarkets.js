@@ -14,8 +14,6 @@ export const SUPERMARKETS = [
   { id: 'autre',       name: 'Autre / Mixte',      index: 100, logo: '🛒', tip: 'Estimation sur base nationale moyenne' },
 ];
 
-export const DEFAULT_SUPERMARKET = 'leclerc';
-
 export function getSupermarket(id) {
   return SUPERMARKETS.find(s => s.id === id) || SUPERMARKETS.find(s => s.id === 'autre');
 }

@@ -31,7 +31,16 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'node',
+    environment: 'jsdom',
     include: ['src/**/*.test.{js,jsx}'],
+    setupFiles: ['src/test/setup.js'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{js,jsx}'],
+      // Point d'entrée et outillage de test exclus
+      exclude: ['src/main.jsx', 'src/test/**', 'src/**/*.test.{js,jsx}'],
+      reporter: ['text', 'text-summary'],
+      thresholds: { lines: 80, statements: 80, functions: 80, branches: 80, perFile: true },
+    },
   },
 })

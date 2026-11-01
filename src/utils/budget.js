@@ -71,14 +71,6 @@ export function totalSavingEnvelopesBudget(envelopes) {
   return envelopes.filter(e => e.type === 'saving').reduce((sum, e) => sum + (Number(e.budgetMonthly) || 0), 0);
 }
 
-export function actualSavingsInPeriod(transactions, envelopes, mode, opts = {}) {
-  const savingEnvIds = new Set(envelopes.filter(e => e.type === 'saving').map(e => e.id));
-  const since = opts.since || periodStart(mode, opts);
-  return transactions
-    .filter(t => savingEnvIds.has(t.envelopeId) && t.date >= since)
-    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-}
-
 // What's left after everything — potential end-of-month savings
 export function computedSavings(salary, charges, envelopes) {
   return (Number(salary) || 0) - totalFixed(charges) - totalVariableEnvelopes(envelopes);
@@ -152,12 +144,6 @@ export function envelopeForecast({ budget, spent, since, periodDays, now = new D
   };
 }
 
-export const FORECAST_LABEL = {
-  ok: { text: 'Dans les clous', cls: 'text-savings' },
-  pace: { text: 'Rythme un peu soutenu — rien de grave, le mois est en cours', cls: 'text-warn' },
-  over: { text: 'Budget dépassé', cls: 'text-danger' },
-};
-
 export function periodDaysFor(mode, now = new Date()) {
   return mode === 'weekly' ? 7 : daysInMonth(now);
 }
@@ -179,15 +165,6 @@ export function realSpending({ transactions, envelopes, bankTransactions = [], s
 export function isBankTodo(b) {
   return b.amount < 0 && !b.ignored && !b.envelopeId && !b.fixedChargeId && !b.withdrawalId && !b.advanceId
     && (b.isCard || /PRLV|PRELEV/i.test(b.label || ''));
-}
-
-export function isCurrentMonth(month, now = new Date()) {
-  return month === monthKey(now);
-}
-
-export function savingsRate(salary, charges, envelopes) {
-  if (!salary) return 0;
-  return Math.max(0, (computedSavings(salary, charges, envelopes) / salary) * 100);
 }
 
 export function donutData(salary, charges, envelopes) {
