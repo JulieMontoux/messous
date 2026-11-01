@@ -5,17 +5,23 @@ const auth = require('../middleware/auth');
 router.use(auth);
 
 router.get('/', async (req, res) => {
-  const { rows } = await pool.query('SELECT * FROM settings WHERE user_id = $1', [req.user.userId]);
-  res.json(rows[0] || { viewMode: 'monthly' });
+  try {
+    const { rows } = await pool.query('SELECT * FROM settings WHERE user_id = $1', [req.user.userId]);
+    res.json(rows[0] || { viewMode: 'monthly' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Crée la ligne si elle manque (anciens comptes)
 router.put('/', async (req, res) => {
-  const { viewMode } = req.body;
-  const { rows } = await pool.query(
-    'UPDATE settings SET view_mode = $2 WHERE user_id = $1 RETURNING *',
-    [req.user.userId, viewMode]
-  );
-  res.json(rows[0]);
+  try {
+    const viewMode = req.body.viewMode === 'weekly' ? 'weekly' : 'monthly';
+    const { rows } = await pool.query(
+      `INSERT INTO settings (user_id, view_mode) VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET view_mode = EXCLUDED.view_mode RETURNING *`,
+      [req.user.userId, viewMode]
+    );
+    res.json(rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

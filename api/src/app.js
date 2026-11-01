@@ -13,9 +13,11 @@ app.use(cors({ origin: corsOrigin }));
 app.use(express.json({ limit: '5mb' }));
 app.use((req, res, next) => {
   const start = Date.now();
+  // Chemin complet (req.path est relatif au routeur une fois la réponse envoyée)
+  const path = req.originalUrl.split('?')[0];
   res.on('finish', () => {
-    if (req.path !== '/api/health' && process.env.NODE_ENV !== 'test')
-      console.log(`${req.method} ${req.path} → ${res.statusCode} (${Date.now() - start}ms)`);
+    if (path !== '/api/health' && process.env.NODE_ENV !== 'test')
+      console.log(`${req.method} ${path} → ${res.statusCode} (${Date.now() - start}ms)`);
   });
   next();
 });

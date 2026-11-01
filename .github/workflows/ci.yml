@@ -52,7 +52,8 @@ jobs:
           cache: npm
           cache-dependency-path: api/package-lock.json
       - run: npm ci
-      - run: npm test
+      # Tests + couverture minimale de 80 % par fichier (lignes, fonctions, branches)
+      - run: npm run test:coverage
 
   e2e:
     name: Parcours de bout en bout (Playwright)

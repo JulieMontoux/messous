@@ -80,10 +80,12 @@ async function applyPendingSalary(userId) {
 }
 
 router.get('/', async (req, res) => {
-  await applyPendingSalary(req.user.userId);
-  const { rows } = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [req.user.userId]);
-  const { rows: [user] } = await pool.query('SELECT email FROM users WHERE id = $1', [req.user.userId]);
-  res.json(rows[0] ? { ...toClient(rows[0]), accountEmail: user?.email || '', mailConfigured: isMailConfigured() } : {});
+  try {
+    await applyPendingSalary(req.user.userId);
+    const { rows } = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [req.user.userId]);
+    const { rows: [user] } = await pool.query('SELECT email FROM users WHERE id = $1', [req.user.userId]);
+    res.json(rows[0] ? { ...toClient(rows[0]), accountEmail: user?.email || '', mailConfigured: isMailConfigured() } : {});
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.put('/', async (req, res) => {
@@ -141,8 +143,10 @@ router.put('/balance', async (req, res) => {
 });
 
 router.delete('/salary/pending', async (req, res) => {
-  await pool.query('UPDATE profiles SET next_salary = NULL, next_salary_from = NULL WHERE user_id = $1', [req.user.userId]);
-  res.json({ ok: true });
+  try {
+    await pool.query('UPDATE profiles SET next_salary = NULL, next_salary_from = NULL WHERE user_id = $1', [req.user.userId]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.post('/test-email', async (req, res) => {

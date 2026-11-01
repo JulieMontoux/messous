@@ -63,10 +63,17 @@ async function sendMail({ to, subject, html, text }) {
 // Notifie une seule fois par (utilisateur, type, référence) : e-mail (si SMTP configuré)
 // et notification push (si un appareil est abonné). build(recipient) → { subject, html, push? }
 async function sendOnce(userId, kind, ref, build) {
-  const { rows } = await pool.query(
-    'INSERT INTO email_log (user_id, kind, ref) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING user_id',
-    [userId, kind, ref]
-  );
+  let rows;
+  try {
+    ({ rows } = await pool.query(
+      'INSERT INTO email_log (user_id, kind, ref) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING user_id',
+      [userId, kind, ref]
+    ));
+  } catch (err) {
+    // Compte supprimé entre-temps : on n'interrompt pas l'envoi aux autres utilisateurs
+    console.error('[mail]', kind, err.message);
+    return false;
+  }
   if (!rows.length) return false;
   try {
     const recipient = await recipientFor(userId);

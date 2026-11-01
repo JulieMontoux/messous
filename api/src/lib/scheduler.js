@@ -87,9 +87,9 @@ async function bankExpiryReminders(now = new Date()) {
 
 let lastBankSync = 0;
 
-async function bankAutoSync() {
+async function bankAutoSync({ force = false } = {}) {
   const hours = Number(process.env.BANK_SYNC_INTERVAL_HOURS) || 6;
-  if (Date.now() - lastBankSync < hours * 3600 * 1000) return;
+  if (!force && Date.now() - lastBankSync < hours * 3600 * 1000) return;
   lastBankSync = Date.now();
   const { rows } = await pool.query("SELECT * FROM bank_connections WHERE status = 'active'");
   for (const conn of rows) {
@@ -109,4 +109,4 @@ function startScheduler() {
   setInterval(tick, 15 * 60 * 1000);
 }
 
-module.exports = { startScheduler, monthEndReminders, bankExpiryReminders, monthlyReports };
+module.exports = { startScheduler, tick, monthEndReminders, bankExpiryReminders, monthlyReports, bankAutoSync };
