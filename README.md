@@ -25,6 +25,15 @@ paiements carte, objectifs d'épargne et historique.
 | **Charges fixes** mensuelles, trimestrielles ou annuelles, avec mois de fin prévu (crédit, engagement) | Charges fixes |
 | **E-mail avant l'expiration** de la connexion bancaire (7 jours avant les 180 jours DSP2) | automatique |
 | **App installable** sur téléphone / ordinateur (« Ajouter à l'écran d'accueil ») | navigateur |
+| **Fin de mois prévue** : solde − prélèvements à venir − enveloppes et épargne restantes, calendrier des prélèvements | Tableau de bord |
+| **Bilan mensuel** le 1er du mois (e-mail + notification) : dépenses par enveloppe, dépassements, épargne, comparaison | automatique |
+| **Suggestions de classement** : marchands connus puis IA locale (Ollama) pour les inconnus | Banque |
+| **Tendances sur 12 mois** et plus fortes variations par enveloppe | Historique |
+| **Objectifs** : versement mensuel prévu, date atteinte, alerte de retard, comparaison avec l'épargne du budget | Objectifs |
+| **Avances** : dépenses payées pour les autres, hors enveloppes, jusqu'au remboursement | Avances, Banque |
+| **Tabac** : paquets achetés ce mois, mode « j'arrête » (jours et euros économisés) | Tableau de bord, Profil |
+| **Notifications push** sur le téléphone (mêmes alertes que les e-mails) | Profil |
+| **Mode sombre** (auto / clair / sombre) et **export CSV** (dépenses, banque, historique…) | Profil |
 | **Rechargement automatique** : le serveur se met à jour tout seul à chaque push, et l'app ouverte dans le navigateur se recharge sur la nouvelle version | voir plus bas |
 
 ## Sécurité
@@ -89,6 +98,12 @@ dans `./backups/messous-AAAA-MM-JJ_HHMM.dump`. Les fichiers de plus de 30 jours 
 Renseigner `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` et `APP_URL` dans `.env`
 (Gmail : mot de passe d'application, port 587). Le bouton *Test* du profil envoie un e-mail de vérification.
 Chaque alerte n'est envoyée qu'une fois par enveloppe, par mois et par seuil.
+
+### Notifications push
+
+Aucune configuration : les clés VAPID sont générées au premier usage et gardées en base
+(ou fournies via `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`). L'app doit être servie en **HTTPS**.
+Sur iPhone (iOS 16.4+), il faut d'abord installer l'app sur l'écran d'accueil.
 
 ### Connecteur bancaire (optionnel)
 

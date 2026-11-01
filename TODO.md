@@ -9,6 +9,9 @@
 - [ ] Activer la sauvegarde Proxmox du conteneur (copie hors du serveur)
 - [ ] Vérifier que `JWT_SECRET` dans `.env` fait au moins 32 caractères (sinon : `openssl rand -hex 32`,
       puis se reconnecter dans l'app)
-- [ ] Sur le téléphone : ouvrir l'app → « Ajouter à l'écran d'accueil »
+- [ ] Sur le téléphone : ouvrir l'app → « Ajouter à l'écran d'accueil », puis Profil →
+      « Notifications sur cet appareil »
+- [ ] Vérifier que le modèle Ollama est bien téléchargé (`docker compose logs ollama-init`)
+      pour les suggestions IA de classement
 - [ ] Connecteur bancaire : résoudre « Erreur réseau » sur « Connecter ma banque »
       (logs API + test d'accès à api.enablebanking.com depuis le conteneur)

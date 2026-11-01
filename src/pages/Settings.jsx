@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { pushSupported, currentSubscription, enablePush, disablePush } from '../utils/push';
-import { ChevronRight, AlertTriangle, LogOut, Mail, Send } from 'lucide-react';
+import { ChevronRight, AlertTriangle, LogOut, Mail, Send, Download } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { useAuth } from '../context/AuthContext';
 import { REGIONS, ENVELOPE_CATEGORIES, generateId, getTobaccoType, tobaccoMonthlyBudget } from '../data/defaults';
@@ -334,6 +334,41 @@ function PushToggle() {
   );
 }
 
+const EXPORTS = [
+  { kind: 'depenses', label: 'Dépenses' },
+  { kind: 'banque', label: 'Opérations bancaires' },
+  { kind: 'historique', label: 'Historique mensuel' },
+  { kind: 'charges', label: 'Charges fixes' },
+  { kind: 'retraits', label: 'Retraits' },
+  { kind: 'avances', label: 'Avances' },
+];
+
+// Export CSV (s'ouvre directement dans Excel / Numbers / LibreOffice)
+function ExportButtons() {
+  const [error, setError] = useState('');
+  async function run(kind) {
+    setError('');
+    try {
+      await api.download(`/api/export/${kind}.csv`, `messous-${kind}-${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+  return (
+    <div className="mb-3">
+      <p className="text-xs text-slate-500 mb-2">Exporter en CSV (Excel, Numbers…)</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {EXPORTS.map(e => (
+          <button key={e.kind} onClick={() => run(e.kind)} className="btn-secondary text-xs py-2 flex items-center justify-center gap-1.5">
+            <Download size={13} /> {e.label}
+          </button>
+        ))}
+      </div>
+      {error && <p className="text-xs text-danger mt-1">{error}</p>}
+    </div>
+  );
+}
+
 function AlertsCard({ profile, dispatch }) {
   const [email, setEmail] = useState(profile.alertEmail || '');
   const [test, setTest] = useState(null);
@@ -567,6 +602,7 @@ export default function Settings() {
       {/* Données */}
       <div className="card">
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Données</p>
+        <ExportButtons />
         <button
           onClick={() => setResetModal(true)}
           className="btn-danger w-full flex items-center justify-center gap-2 mb-2"

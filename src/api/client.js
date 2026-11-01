@@ -29,7 +29,20 @@ async function request(method, path, body) {
   return res.json();
 }
 
+// Téléchargement d'un fichier protégé (export CSV) : requête authentifiée puis enregistrement local
+async function download(path, filename) {
+  const res = await fetch(path, { headers: { Authorization: `Bearer ${getToken()}` } });
+  if (!res.ok) throw new Error(`Export impossible (${res.status})`);
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export const api = {
+  download,
   post: (path, body) => request('POST', path, body),
   get: (path) => request('GET', path),
   put: (path, body) => request('PUT', path, body),
