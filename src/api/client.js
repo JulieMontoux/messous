@@ -62,6 +62,11 @@ export const DEFAULT_PROFILE = {
   idealSavingsPct: 20,
   nextSalary: null,
   nextSalaryFrom: null,
+  manualBalance: null,
+  manualBalanceAt: null,
+  monthlyReportEmail: true,
+  theme: 'auto',
+  tobaccoQuitDate: null,
   accountEmail: '',
   mailConfigured: false,
 };

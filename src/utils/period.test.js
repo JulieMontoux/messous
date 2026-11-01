@@ -189,3 +189,42 @@ describe('budget idéal et reports', async () => {
     expect(carryoverFor(c, 'b', '2026-11')).toBe(0);
   });
 });
+
+describe('solde prévisionnel de fin de mois', async () => {
+  const { monthEndForecast, upcomingCharges } = await import('./budget');
+  const now = new Date(2026, 10, 10); // 10 novembre
+  const charges = [
+    { id: 'loyer', name: 'Loyer', amount: 700, lastPaidAt: '2026-11-05' },          // déjà payé ce mois
+    { id: 'edf', name: 'EDF', amount: 80, lastPaidAt: '2026-10-15' },               // à venir le 15
+    { id: 'assur', name: 'Assurance', amount: 120, frequency: 'yearly', dueMonth: 11 }, // annuelle due ce mois
+    { id: 'netflix', name: 'Netflix', amount: 99, frequency: 'yearly', dueMonth: 3 },   // pas ce mois
+    { id: 'credit', name: 'Crédit', amount: 250, endMonth: '2026-10' },             // terminé
+  ];
+
+  it('prélèvements à venir triés par jour', () => {
+    expect(upcomingCharges(charges, now).map(c => [c.id, c.dueDay])).toEqual([['edf', 15], ['assur', null]]);
+  });
+
+  it('solde − prélèvements − enveloppes restantes (hors espèces en poche) − épargne à verser', () => {
+    const r = monthEndForecast({
+      balance: 2000,
+      charges,
+      envelopes: [{ id: 'c', type: 'need', budgetMonthly: 300 }, { id: 's', type: 'saving', budgetMonthly: 100 }],
+      transactions: [
+        { envelopeId: 'c', amount: 50, date: '2026-11-03', paymentMethod: 'card' },
+        { envelopeId: 'c', amount: 30, date: '2026-11-04', paymentMethod: 'cash' },
+      ],
+      withdrawals: [{ date: '2026-11-02', amount: 100 }],
+      now,
+    });
+    // enveloppe : 300 − 80 = 220 restants, dont 70 déjà en espèces en poche → 150 depuis le compte
+    expect(r.chargesLeft).toBe(200);
+    expect(r.envelopesLeft).toBe(150);
+    expect(r.savingsLeft).toBe(100);
+    expect(r.forecast).toBe(2000 - 200 - 150 - 100);
+  });
+
+  it('sans solde connu → pas de prévision', () => {
+    expect(monthEndForecast({ balance: null, charges: [], envelopes: [], transactions: [], now }).forecast).toBeNull();
+  });
+});

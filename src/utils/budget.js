@@ -244,3 +244,61 @@ export function carryoverFor(carryovers = [], envelopeId, month = monthKey()) {
     .filter(c => c.envelopeId === envelopeId && c.month === month)
     .reduce((s, c) => s + Number(c.amount), 0);
 }
+
+// Jour habituel de prélèvement d'une charge, appris du dernier paiement bancaire rattaché
+export function chargeDueDay(charge) {
+  return charge.lastPaidAt ? Number(String(charge.lastPaidAt).slice(8, 10)) : null;
+}
+
+// Charge déjà payée pour l'échéance du mois en cours ?
+export function chargePaidThisMonth(charge, now = new Date()) {
+  if (!charge.lastPaidAt) return false;
+  const paid = String(charge.lastPaidAt).slice(0, 10);
+  const span = { quarterly: 3, yearly: 12 }[charge.frequency] || 1;
+  const [py, pm] = paid.split('-').map(Number);
+  const monthsAgo = (now.getFullYear() - py) * 12 + (now.getMonth() + 1 - pm);
+  return monthsAgo < span;
+}
+
+// Prélèvements restant à passer ce mois-ci (charges actives, dues ce mois, pas encore payées)
+export function upcomingCharges(charges, now = new Date()) {
+  const month = monthKey(now);
+  return charges
+    .filter(c => isChargeActive(c, month) && isDueInMonth(c, now.getMonth() + 1) && !chargePaidThisMonth(c, now))
+    .map(c => ({ ...c, dueDay: chargeDueDay(c) }))
+    .sort((a, b) => (a.dueDay ?? 99) - (b.dueDay ?? 99));
+}
+
+// Solde prévisionnel de fin de mois :
+// solde actuel − prélèvements à venir − budget d'enveloppes pas encore dépensé (hors espèces déjà
+// retirées, qui ont déjà quitté le compte) − épargne d'enveloppes pas encore versée
+export function monthEndForecast({ balance, charges, envelopes, transactions, carryovers = [], withdrawals = [], now = new Date() }) {
+  const month = monthKey(now);
+  const since = `${month}-01`;
+  const upcoming = upcomingCharges(charges, now);
+  const chargesLeft = upcoming.reduce((s, c) => s + Number(c.amount), 0);
+
+  let envelopesLeft = 0;
+  let savingsLeft = 0;
+  for (const e of envelopes) {
+    const budget = Number(e.budgetMonthly) + carryoverFor(carryovers, e.id, month);
+    const spent = transactions.filter(t => t.envelopeId === e.id && t.date >= since).reduce((s, t) => s + Number(t.amount), 0);
+    const left = Math.max(0, budget - spent);
+    if (e.type === 'saving') savingsLeft += left; else envelopesLeft += left;
+  }
+  const withdrawn = withdrawals.filter(w => w.date >= since).reduce((s, w) => s + Number(w.amount), 0);
+  const cashSpent = transactions
+    .filter(t => t.date >= since && (t.paymentMethod || 'cash') === 'cash')
+    .reduce((s, t) => s + Number(t.amount), 0);
+  const cashInPocket = Math.max(0, withdrawn - cashSpent);
+  const envelopesFromAccount = Math.max(0, envelopesLeft - cashInPocket);
+
+  return {
+    balance,
+    upcoming,
+    chargesLeft,
+    envelopesLeft: envelopesFromAccount,
+    savingsLeft,
+    forecast: balance == null ? null : balance - chargesLeft - envelopesFromAccount - savingsLeft,
+  };
+}

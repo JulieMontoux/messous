@@ -4,12 +4,12 @@ import {
   fmt, totalFixedExSavings, totalProgrammedSavings,
   totalExpenseEnvelopes, totalSavingEnvelopesBudget,
   computedSavings, totalSavings, budgetHealth, HEALTH_CONFIG, donutData, weeklyAmount,
-  realSpending, envelopeForecast, periodDaysFor, idealSplit, pctLabel, carryoverFor,
+  realSpending, envelopeForecast, periodDaysFor, idealSplit, pctLabel, carryoverFor, monthEndForecast, fmtDec,
 } from '../utils/budget';
 import { periodStart, monthKey, previousMonthKey, isLastDayOfMonth, daysInMonth, addDays, toLocalDate, formatDay } from '../utils/period';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard } from 'lucide-react';
+import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard, Landmark, Pencil } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const MONTH_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -80,6 +80,106 @@ function SalaryDetectedBanner({ state, dispatch }) {
         <button className="btn-secondary text-xs py-1.5" onClick={dismiss}>Ignorer</button>
         <button className="btn-primary text-xs py-1.5" onClick={apply}>Mettre à jour</button>
       </div>
+    </div>
+  );
+}
+
+// Solde prévisionnel de fin de mois + calendrier des prélèvements à venir.
+// Solde : comptes bancaires connectés, sinon solde saisi à la main.
+function ForecastCard({ state, dispatch }) {
+  const [accounts, setAccounts] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    api.get('/api/bank/status').then(s => setAccounts(s.accounts || [])).catch(() => setAccounts([]));
+  }, []);
+
+  const withBalance = (accounts || []).filter(a => a.balance != null);
+  const bankBalance = withBalance.length ? withBalance.reduce((s, a) => s + a.balance, 0) : null;
+  const balance = bankBalance ?? state.profile.manualBalance ?? null;
+  const f = monthEndForecast({
+    balance,
+    charges: state.fixedCharges,
+    envelopes: state.envelopes,
+    transactions: state.transactions,
+    carryovers: state.carryovers,
+    withdrawals: state.withdrawals,
+  });
+  const now = new Date();
+  const lastDay = daysInMonth(now);
+
+  async function saveBalance() {
+    const updated = await api.put('/api/profile/balance', { balance: draft === '' ? null : Number(draft) });
+    dispatch({ type: 'SET_PROFILE', payload: updated });
+    setEditing(false);
+  }
+
+  if (accounts === null) return null;
+
+  return (
+    <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Fin de mois prévue</p>
+          {f.forecast != null ? (
+            <p className={cn('text-3xl font-bold mt-1', f.forecast < 0 ? 'text-danger' : 'text-slate-800')}>{fmt(f.forecast)}</p>
+          ) : (
+            <p className="text-sm text-slate-500 mt-1">Indique ton solde pour voir la prévision</p>
+          )}
+          <p className="text-xs text-slate-400">le {lastDay} {MONTH_LONG[now.getMonth()]}, hors salaire et revenus à venir</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-slate-400 flex items-center gap-1 justify-end"><Landmark size={12} /> Solde {bankBalance != null ? 'banque' : 'saisi'}</p>
+          {editing ? (
+            <div className="flex gap-1 mt-1">
+              <input className="input py-1 w-28 text-sm" type="number" value={draft} onChange={e => setDraft(e.target.value)} autoFocus />
+              <button className="btn-primary text-xs px-2 py-1" onClick={saveBalance}>OK</button>
+            </div>
+          ) : (
+            <button
+              className="text-lg font-bold text-slate-700 flex items-center gap-1 ml-auto disabled:cursor-default"
+              disabled={bankBalance != null}
+              onClick={() => { setDraft(balance ?? ''); setEditing(true); }}
+            >
+              {balance != null ? fmtDec(balance) : 'Saisir'}
+              {bankBalance == null && <Pencil size={12} className="text-slate-400" />}
+            </button>
+          )}
+        </div>
+      </div>
+      {f.forecast != null && (
+        <div className="grid grid-cols-3 gap-2 text-center mb-3">
+          {[
+            { label: 'Prélèvements', value: f.chargesLeft },
+            { label: 'Enveloppes', value: f.envelopesLeft },
+            { label: 'Épargne à verser', value: f.savingsLeft },
+          ].map(x => (
+            <div key={x.label} className="rounded-xl bg-slate-50 py-2">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">{x.label}</p>
+              <p className="text-sm font-bold text-slate-700">−{fmt(x.value)}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {f.upcoming.length > 0 ? (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 mb-1.5">Prélèvements à venir</p>
+          <div className="space-y-1">
+            {f.upcoming.map(c => (
+              <div key={c.id} className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-semibold text-slate-400 w-12 flex-shrink-0">{c.dueDay ? `le ${c.dueDay}` : 'ce mois'}</span>
+                  <span className="text-slate-600 truncate">{c.name}</span>
+                </span>
+                <span className="font-semibold text-slate-700 flex-shrink-0">{fmt(c.amount)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-savings">✓ Toutes les charges fixes du mois sont passées</p>
+      )}
     </div>
   );
 }
@@ -220,6 +320,7 @@ export default function Dashboard({ navigate }) {
         {/* Colonne gauche */}
         <div className="lg:col-span-2 space-y-4">
           <LiveMonthCard state={state} navigate={navigate} />
+          <ForecastCard state={state} dispatch={dispatch} />
 
           {/* Hero card salaire */}
           <div className="rounded-2xl bg-gradient-to-br from-primary to-primary-dark text-white p-6 shadow-lg">

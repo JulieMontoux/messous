@@ -33,6 +33,11 @@ function toClient(r) {
     idealSavingsPct: r.ideal_savings_pct ?? 20,
     nextSalary: r.next_salary != null ? Number(r.next_salary) : null,
     nextSalaryFrom: r.next_salary_from || null,
+    manualBalance: r.manual_balance != null ? Number(r.manual_balance) : null,
+    manualBalanceAt: r.manual_balance_at || null,
+    monthlyReportEmail: r.monthly_report_email ?? true,
+    theme: r.theme || 'auto',
+    tobaccoQuitDate: r.tobacco_quit_date || null,
   };
 }
 
@@ -60,6 +65,9 @@ const FIELDS = {
   idealNeedsPct: 'ideal_needs_pct',
   idealWantsPct: 'ideal_wants_pct',
   idealSavingsPct: 'ideal_savings_pct',
+  monthlyReportEmail: 'monthly_report_email',
+  theme: ['theme', v => (['auto', 'light', 'dark'].includes(v) ? v : 'auto')],
+  tobaccoQuitDate: ['tobacco_quit_date', v => v || null],
 };
 
 // Applique un nouveau salaire programmé dès que son mois d'effet est arrivé
@@ -118,6 +126,20 @@ router.put('/salary', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Solde du compte saisi à la main (utilisé quand la banque ne fournit pas de solde)
+router.put('/balance', async (req, res) => {
+  try {
+    const { balance } = req.body;
+    const value = balance === null || balance === '' ? null : Number(balance);
+    if (value !== null && !Number.isFinite(value)) return res.status(400).json({ error: 'Montant invalide' });
+    const { rows } = await pool.query(
+      'UPDATE profiles SET manual_balance = $2, manual_balance_at = CASE WHEN $2::numeric IS NULL THEN NULL ELSE NOW() END WHERE user_id = $1 RETURNING *',
+      [req.user.userId, value]
+    );
+    res.json(toClient(rows[0]));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.delete('/salary/pending', async (req, res) => {
   await pool.query('UPDATE profiles SET next_salary = NULL, next_salary_from = NULL WHERE user_id = $1', [req.user.userId]);
   res.json({ ok: true });
@@ -150,7 +172,7 @@ router.post('/reset', async (req, res) => {
     for (const table of [
       'bank_rules', 'bank_transactions', 'bank_accounts', 'bank_connections', 'withdrawals',
       'recurring_transactions', 'transactions', 'envelopes', 'fixed_charges', 'savings_history',
-      'savings_goals', 'ai_suggestions', 'email_log', 'envelope_carryovers', 'profiles',
+      'savings_goals', 'ai_suggestions', 'email_log', 'envelope_carryovers', 'advances', 'push_subscriptions', 'profiles',
     ]) {
       await client.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
     }
