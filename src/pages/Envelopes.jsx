@@ -58,8 +58,10 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
   const savingsIdealBudget = idealResult.savingsBudget;
   const savingsIdealToWithdraw = idealResult.savingsToWithdraw;
 
-  // Besoins always shown as individual envelopes; wants/savings switch on calcMode
-  const needsTotal = envResult.needsTotal;
+  // Budget idéal : un montant global par groupe (besoins 50 %, plaisirs 30 % − tabac, épargne 20 %),
+  // seul le tabac reste basé sur son enveloppe. Mode enveloppes : une ligne par enveloppe.
+  const needsSpent = needsData.reduce((s, e) => s + e.spent, 0);
+  const needsTotal = isIdeal ? idealResult.needsToWithdraw : envResult.needsTotal;
   const pleasuresTotal = isIdeal ? pleasuresIdealToWithdraw : envResult.wantsTotal;
   const savingsTotal = isIdeal ? savingsIdealToWithdraw : envResult.savingsTotal;
   const grandTotal = roundUpTo(Math.max(0, needsTotal + tobaccoToWithdraw + pleasuresTotal + savingsTotal - cashInHand), roundToTen ? 10 : 1);
@@ -121,29 +123,47 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
         </div>
       )}
 
-      {/* Besoins — toujours lignes individuelles */}
-      {needsData.length > 0 && (
+      {/* Besoins */}
+      {(isIdeal ? idealResult.needsBudget > 0 : needsData.length > 0) && (
         <div className="mb-3">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">🧾 Besoins</p>
-          {needsData.map(e => (
-            <div key={e.id} className="flex items-center justify-between mb-1.5">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
+            🧾 Besoins {isIdeal && <span className="normal-case font-normal">(idéal 50 % du disponible)</span>}
+          </p>
+          {isIdeal ? (
+            <div className="flex items-center justify-between">
               <div>
-                <span className="text-sm text-slate-600">{e.icon} {e.name}</span>
-                {e.spent > 0 && (
-                  <span className="text-xs text-slate-400 ml-1.5">
-                    ({fmt(e.spent)} dépensé)
-                  </span>
+                <span className="text-sm text-slate-600">Total besoins</span>
+                {needsSpent > 0 && (
+                  <span className="text-xs text-slate-400 ml-1.5">({fmt(needsSpent)} dépensé)</span>
                 )}
               </div>
-              <span className={`font-semibold ${e.toWithdraw === 0 ? 'text-slate-400' : 'text-slate-800'}`}>
-                {e.toWithdraw === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(e.budget)}</span>0 €</> : fmt(e.toWithdraw)}
+              <span className={`font-bold ${needsTotal === 0 ? 'text-slate-400' : 'text-needs'}`}>
+                {needsTotal === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(idealResult.needsBudget)}</span>0 €</> : fmt(needsTotal)}
               </span>
             </div>
-          ))}
-          <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-1">
-            <span className="text-xs font-semibold text-slate-500">Sous-total</span>
-            <span className="font-bold text-needs">{fmt(needsTotal)}</span>
-          </div>
+          ) : (
+            <>
+              {needsData.map(e => (
+                <div key={e.id} className="flex items-center justify-between mb-1.5">
+                  <div>
+                    <span className="text-sm text-slate-600">{e.icon} {e.name}</span>
+                    {e.spent > 0 && (
+                      <span className="text-xs text-slate-400 ml-1.5">
+                        ({fmt(e.spent)} dépensé)
+                      </span>
+                    )}
+                  </div>
+                  <span className={`font-semibold ${e.toWithdraw === 0 ? 'text-slate-400' : 'text-slate-800'}`}>
+                    {e.toWithdraw === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(e.budget)}</span>0 €</> : fmt(e.toWithdraw)}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-1">
+                <span className="text-xs font-semibold text-slate-500">Sous-total</span>
+                <span className="font-bold text-needs">{fmt(needsTotal)}</span>
+              </div>
+            </>
+          )}
         </div>
       )}
 
