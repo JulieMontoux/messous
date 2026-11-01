@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Upload, Link2, Trash2, CreditCard, EyeOff, Eye, X, Landmark, Search } from 'lucide-react';
+import { RefreshCw, Upload, Link2, Trash2, CreditCard, EyeOff, Eye, X, Landmark, Search, Sparkles, Check } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { api, fetchBankTransactions } from '../api/client';
-import { fmt, fmtDec, realSpending, isBankTodo as isTodo, chargeFromForm } from '../utils/budget';
+import { fmt, fmtDec, realSpending, isBankTodo as isTodo, chargeFromForm, isChargeActive } from '../utils/budget';
 import { blankCharge, generateId } from '../data/defaults';
 import ChargeForm from '../components/ChargeForm';
 import { periodStart, formatDay } from '../utils/period';
@@ -30,7 +30,23 @@ function SpendTile({ label, value, sub, accent = 'text-slate-800' }) {
 const FREQ_LABEL = { quarterly: ' · trimestriel', yearly: ' · annuel' };
 
 // Valeur du menu de classement : « env:<id> », « fix:<id> » ou « new-fix »
-function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onAssign, onUnassign, onIgnore, onCreateCharge }) {
+// Libellé d'une destination « env:<id> » / « fix:<id> »
+function targetLabel(target, envelopes, fixedCharges) {
+  const [kind, id] = target.split(':');
+  if (kind === 'env') {
+    const e = envelopes.find(x => x.id === id);
+    return e ? `${e.icon || ''} ${e.name}` : null;
+  }
+  const c = fixedCharges.find(x => x.id === id);
+  return c ? `📌 ${c.name}` : null;
+}
+
+function targetBody(target) {
+  const [kind, id] = target.split(':');
+  return kind === 'fix' ? { fixedChargeId: id } : { envelopeId: id };
+}
+
+function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, suggestion, onToggle, onAssign, onUnassign, onIgnore, onCreateCharge }) {
   const [target, setTarget] = useState('');
   const [remember, setRemember] = useState(true);
   const env = envelopes.find(e => e.id === b.envelopeId);
@@ -39,6 +55,12 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onA
 
   function classify() {
     if (target === 'new-fix') return onCreateCharge(b, remember);
+    if (target === 'cash') return onAssign(b, { asWithdrawal: true }, false);
+    if (target === 'advance') {
+      const person = window.prompt('Avance pour qui ? (prénom)');
+      if (person && person.trim()) onAssign(b, { advance: { person: person.trim() } }, false);
+      return;
+    }
     const [kind, id] = target.split(':');
     onAssign(b, kind === 'fix' ? { fixedChargeId: id } : { envelopeId: id }, remember);
   }
@@ -68,9 +90,13 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onA
       </div>
 
       {debit && !b.ignored && (
-        env || charge ? (
+        env || charge || b.withdrawalId || b.advanceId ? (
           <div className="flex items-center gap-2 mt-2">
-            {env
+            {b.advanceId
+              ? <span className="text-xs bg-amber-50 text-amber-700 font-medium px-2 py-1 rounded-full">🤝 Avance · {b.advancePerson}</span>
+              : b.withdrawalId
+              ? <span className="text-xs bg-savings/10 text-savings font-medium px-2 py-1 rounded-full">💶 Retrait d'espèces</span>
+              : env
               ? <span className="text-xs bg-primary/10 text-primary font-medium px-2 py-1 rounded-full">{env.icon || ''} {env.name}</span>
               : <span className="text-xs bg-fixed/10 text-fixed-dark font-medium px-2 py-1 rounded-full">📌 {charge.name}{FREQ_LABEL[charge.frequency] || ''}</span>}
             <button onClick={() => onUnassign(b)} className="text-xs text-slate-400 hover:text-danger flex items-center gap-0.5">
@@ -78,6 +104,21 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onA
             </button>
           </div>
         ) : bulkMode ? null : (
+          <>
+          {suggestion && targetLabel(suggestion.target, envelopes, fixedCharges) && (
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 font-medium px-2 py-1 rounded-full flex items-center gap-1">
+                <Sparkles size={11} /> {targetLabel(suggestion.target, envelopes, fixedCharges)} ?
+                <span className="text-[10px] text-amber-500 font-normal">{suggestion.source === 'ai' ? 'IA' : 'marchand connu'}</span>
+              </span>
+              <button
+                onClick={() => onAssign(b, targetBody(suggestion.target), false)}
+                className="text-xs font-semibold text-savings flex items-center gap-0.5 hover:underline"
+              >
+                <Check size={13} /> Accepter
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <select className="input py-1.5 text-xs flex-1 min-w-[160px]" value={target} onChange={e => setTarget(e.target.value)}>
               <option value="">Classer dans…</option>
@@ -87,9 +128,11 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onA
                 </optgroup>
               )}
               <optgroup label="Charges fixes">
-                {fixedCharges.map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
+                {fixedCharges.filter(c => isChargeActive(c)).map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
                 <option value="new-fix">＋ Nouvelle charge fixe…</option>
               </optgroup>
+              <option value="cash">💶 Retrait d'espèces</option>
+              <option value="advance">🤝 Avance pour quelqu'un…</option>
             </select>
             <label className="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer">
               <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
@@ -102,6 +145,7 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, onToggle, onA
               <EyeOff size={14} />
             </button>
           </div>
+          </>
         )
       )}
       {b.ignored && (
@@ -142,9 +186,10 @@ function BulkBar({ count, total, envelopes, fixedCharges, onApply, onClear }) {
           )}
           {fixedCharges.length > 0 && (
             <optgroup label="Charges fixes">
-              {fixedCharges.map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
+              {fixedCharges.filter(c => isChargeActive(c)).map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
             </optgroup>
           )}
+          <option value="cash">💶 Retrait d'espèces</option>
         </select>
         <label className="flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
           <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
@@ -325,6 +370,8 @@ export default function Bank({ params = {} }) {
   const [filter, setFilter] = useState('todo');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(() => new Set());
+  const [suggestions, setSuggestions] = useState({});
+  const [suggesting, setSuggesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState(
     params.bank === 'ok' ? { ok: true, text: 'Banque connectée ✅ Les opérations ont été récupérées.' }
@@ -339,9 +386,11 @@ export default function Bank({ params = {} }) {
   }
 
   async function refresh() {
-    const [bank, txs] = await Promise.all([fetchBankTransactions(), api.get('/api/transactions')]);
+    const [bank, txs, withdrawals] = await Promise.all([fetchBankTransactions(), api.get('/api/transactions'), api.get('/api/withdrawals')]);
     dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bank });
     dispatch({ type: 'SET_TRANSACTIONS', payload: txs });
+    dispatch({ type: 'SET_WITHDRAWALS', payload: withdrawals });
+    dispatch({ type: 'SET_ADVANCES', payload: await api.get('/api/advances').catch(() => []) });
     await loadStatus();
   }
 
@@ -352,7 +401,11 @@ export default function Bank({ params = {} }) {
     try {
       const r = await api.post('/api/bank/sync');
       await refresh();
-      setMessage({ ok: true, text: `${r.inserted} nouvelle(s) opération(s), ${r.assigned} classée(s) automatiquement.` });
+      setMessage({
+        ok: true,
+        text: `${r.inserted} nouvelle(s) opération(s), ${r.assigned} classée(s) automatiquement`
+          + (r.withdrawals ? `, ${r.withdrawals} retrait(s) d'espèces enregistré(s).` : '.'),
+      });
     } catch (err) {
       setMessage({ ok: false, text: err.message });
     }
@@ -367,7 +420,7 @@ export default function Bank({ params = {} }) {
   async function assign(b, target, remember) {
     try {
       const { transaction } = await api.post(`/api/bank/transactions/${b.id}/assign`, { ...target, remember });
-      if (remember) {
+      if (remember || target.asWithdrawal || target.advance) {
         await refresh();
       } else {
         dispatch({
@@ -402,6 +455,7 @@ export default function Bank({ params = {} }) {
     dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bankTransactions.map(x => x.id === b.id ? { ...x, envelopeId: null, fixedChargeId: null, transactionId: null } : x) });
     dispatch({ type: 'SET_TRANSACTIONS', payload: transactions.filter(t => t.id !== b.transactionId) });
     if (b.fixedChargeId) await reloadCharges();
+    if (b.withdrawalId || b.advanceId) await refresh();
   }
 
   function toggle(id) {
@@ -412,10 +466,50 @@ export default function Bank({ params = {} }) {
     });
   }
 
+  async function suggest() {
+    setSuggesting(true);
+    try {
+      const r = await api.post('/api/bank/suggest', {});
+      setSuggestions(r.suggestions || {});
+      const n = Object.keys(r.suggestions || {}).length;
+      setMessage({
+        ok: true,
+        text: `${n} suggestion${n > 1 ? 's' : ''} de classement`
+          + (r.aiError ? ' (IA indisponible : seulement les marchands connus)' : '') + '. Vérifie puis accepte.',
+      });
+    } catch (err) {
+      setMessage({ ok: false, text: err.message });
+    }
+    setSuggesting(false);
+  }
+
+  // Accepte toutes les suggestions visibles, regroupées par destination (un appel par destination)
+  async function acceptAllSuggestions(rows) {
+    const groups = {};
+    for (const b of rows) {
+      const sug = suggestions[b.id];
+      if (sug && targetLabel(sug.target, envelopes, fixedCharges)) (groups[sug.target] ||= []).push(b.id);
+    }
+    try {
+      let n = 0;
+      for (const [target, ids] of Object.entries(groups)) {
+        const r = await api.post('/api/bank/transactions/bulk', { ids, ...targetBody(target) });
+        n += r.updated;
+      }
+      setSuggestions({});
+      await refresh();
+      if (Object.keys(groups).some(t => t.startsWith('fix:'))) await reloadCharges();
+      setMessage({ ok: true, text: `${n} opération${n > 1 ? 's' : ''} classée${n > 1 ? 's' : ''}.` });
+    } catch (err) {
+      setMessage({ ok: false, text: err.message });
+    }
+  }
+
   async function bulkApply(action, remember) {
     const ids = [...selected];
     const [kind, id] = action.split(':');
     const body = action === 'ignore' ? { ids, ignore: true }
+      : action === 'cash' ? { ids, asWithdrawal: true }
       : kind === 'fix' ? { ids, fixedChargeId: id, remember } : { ids, envelopeId: id, remember };
     try {
       const r = await api.post('/api/bank/transactions/bulk', body);
@@ -430,6 +524,7 @@ export default function Bank({ params = {} }) {
 
   async function ignore(b, ignored) {
     await api.post(`/api/bank/transactions/${b.id}/ignore`, { ignored });
+    if (b.withdrawalId || b.advanceId) return refresh();
     dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bankTransactions.map(x => x.id === b.id ? { ...x, ignored } : x) });
   }
 
@@ -445,7 +540,7 @@ export default function Bank({ params = {} }) {
   }
 
   const monthStart = periodStart('monthly');
-  const weekSince = periodStart('weekly', { withdrawals: state.withdrawals });
+  const weekSince = periodStart('weekly', { withdrawals: state.withdrawals, savingsHistory: state.savingsHistory });
   const month = useMemo(() => realSpending({ transactions, envelopes, bankTransactions, since: monthStart }), [transactions, envelopes, bankTransactions, monthStart]);
   const week = useMemo(() => realSpending({ transactions, envelopes, bankTransactions, since: weekSince }), [transactions, envelopes, bankTransactions, weekSince]);
   const todoCount = bankTransactions.filter(isTodo).length;
@@ -589,6 +684,22 @@ export default function Bank({ params = {} }) {
               />
             </div>
           </div>
+          {filter === 'todo' && todoCount > 0 && selected.size === 0 && (() => {
+            const suggested = visible.filter(b => suggestions[b.id]);
+            return (
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <button onClick={suggest} disabled={suggesting} className="btn-secondary text-xs py-1.5 flex items-center gap-1.5">
+                  <Sparkles size={13} className={suggesting ? 'animate-pulse text-amber-500' : 'text-amber-500'} />
+                  {suggesting ? 'Analyse en cours…' : 'Suggérer un classement'}
+                </button>
+                {suggested.length > 0 && (
+                  <button onClick={() => acceptAllSuggestions(suggested)} className="btn-primary text-xs py-1.5 flex items-center gap-1">
+                    <Check size={13} /> Accepter les {suggested.length} suggestion{suggested.length > 1 ? 's' : ''}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           {selected.size > 0 && (
             <BulkBar
               count={selected.size}
@@ -610,6 +721,7 @@ export default function Bank({ params = {} }) {
                 fixedCharges={fixedCharges}
                 selected={selected.has(b.id)}
                 bulkMode={selected.size > 0}
+                suggestion={suggestions[b.id]}
                 onToggle={toggle}
                 onAssign={assign}
                 onUnassign={unassign}
@@ -655,6 +767,7 @@ export default function Bank({ params = {} }) {
             setMessage({
               ok: true,
               text: `${r.parsed} ligne(s) lue(s), ${r.inserted} nouvelle(s), ${r.assigned} classée(s) automatiquement`
+                + (r.withdrawals ? `, ${r.withdrawals} retrait(s) d'espèces enregistré(s)` : '')
                 + (r.skipped ? ` · ${r.skipped} antérieure(s) au ${formatDay(r.from, { day: 'numeric', month: 'long' })} ignorée(s).` : '.'),
             });
           }}

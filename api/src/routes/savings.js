@@ -1,8 +1,12 @@
 const router = require('express').Router();
 const { pool } = require('../db');
 const auth = require('../middleware/auth');
+const { buildMonthlyReport } = require('../lib/report');
 
 router.use(auth);
+
+// Mois au format AAAA-MM (01 à 12)
+const isMonth = m => /^\d{4}-(0[1-9]|1[0-2])$/.test(m || '');
 
 const toClient = r => ({
   month: r.month,
@@ -30,8 +34,17 @@ router.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Bilan d'un mois (même contenu que l'e-mail du 1er du mois)
+router.get('/:month/report', async (req, res) => {
+  try {
+    if (!isMonth(req.params.month)) return res.status(400).json({ error: 'Mois invalide' });
+    res.json(await buildMonthlyReport(req.user.userId, req.params.month));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.put('/:month', async (req, res) => {
   try {
+    if (!isMonth(req.params.month)) return res.status(400).json({ error: 'Mois invalide' });
     const { salary, totalFixed, totalEnvelopes, programmedSavings, savingEnvelopes, remainder, totalSavings, recordedAt } = req.body;
     const { rows } = await pool.query(
       `INSERT INTO savings_history (user_id, month, salary, total_fixed, total_envelopes, programmed_savings, saving_envelopes, remainder, total_savings, recorded_at)
@@ -52,9 +65,9 @@ router.put('/:month', async (req, res) => {
 router.put('/:month/close', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { actualSavings, actualRemainder, remainderToGoalId = null } = req.body;
+    const { actualSavings, actualRemainder, remainderToGoalId = null, carryovers } = req.body;
     const month = req.params.month;
-    if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'Mois invalide' });
+    if (!isMonth(month)) return res.status(400).json({ error: 'Mois invalide' });
     await client.query('BEGIN');
     const { rows: [prev] } = await client.query(
       'SELECT actual_remainder, remainder_to_goal_id FROM savings_history WHERE user_id = $1 AND month = $2 FOR UPDATE',
@@ -81,6 +94,20 @@ router.put('/:month/close', async (req, res) => {
         'UPDATE savings_goals SET current_amount = current_amount + $2 WHERE id = $1 AND user_id = $3',
         [remainderToGoalId, Number(actualRemainder), req.user.userId]
       );
+    }
+    // Restes d'enveloppes reportés sur le mois suivant (remplace un report précédent)
+    if (Array.isArray(carryovers)) {
+      const [y, m] = month.split('-').map(Number);
+      const next = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}`;
+      await client.query('DELETE FROM envelope_carryovers WHERE user_id = $1 AND month = $2', [req.user.userId, next]);
+      for (const c of carryovers) {
+        if (!(Number(c.amount) > 0)) continue;
+        await client.query(
+          `INSERT INTO envelope_carryovers (user_id, envelope_id, month, amount)
+           SELECT $1, id, $3, $4 FROM envelopes WHERE id = $2 AND user_id = $1`,
+          [req.user.userId, c.envelopeId, next, Number(c.amount)]
+        );
+      }
     }
     await client.query('COMMIT');
     res.json(toClient(rows[0]));

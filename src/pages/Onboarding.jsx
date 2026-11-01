@@ -228,7 +228,7 @@ export default function Onboarding() {
                     <p className="text-xs text-slate-400">{sub}</p>
                   </div>
                   <div className={`w-11 h-6 rounded-full transition-colors relative ${profile[key] ? 'bg-primary' : 'bg-slate-200'}`}>
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${profile[key] ? 'left-6' : 'left-1'}`} />
+                    <div className={`absolute top-1 knob w-4 h-4 bg-white rounded-full shadow transition-all ${profile[key] ? 'left-6' : 'left-1'}`} />
                   </div>
                 </button>
               ))}

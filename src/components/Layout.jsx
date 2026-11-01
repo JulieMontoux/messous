@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Receipt, Wallet, Lightbulb, UserRound, BarChart2, ChevronLeft, ChevronRight,
-  TrendingUp, LogOut, Target, Landmark, MoreHorizontal, RefreshCw,
+  TrendingUp, LogOut, Target, Landmark, MoreHorizontal, RefreshCw, HandCoins,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,7 @@ const NAV = [
   { id: 'history', label: 'Historique', short: 'Historique', icon: BarChart2 },
   { id: 'charges', label: 'Charges fixes', short: 'Fixes', icon: Receipt },
   { id: 'goals', label: 'Objectifs', short: 'Objectifs', icon: Target },
+  { id: 'advances', label: 'Avances', short: 'Avances', icon: HandCoins },
   { id: 'suggestions', label: 'Astuces', short: 'Astuces', icon: Lightbulb },
   { id: 'settings', label: 'Profil', short: 'Profil', icon: UserRound },
 ];

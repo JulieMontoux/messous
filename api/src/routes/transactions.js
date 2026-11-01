@@ -68,7 +68,7 @@ router.post('/', async (req, res) => {
       [isUUID(id) ? id : null, req.user.userId, envelopeId, amount, note || '', date || localDate(), paymentMethod === 'card' ? 'card' : 'cash']
     );
     res.json(toClient(rows[0]));
-    checkEnvelopeAlert(req.user.userId, envelopeId).catch(err => console.error('[alert]', err.message));
+    checkEnvelopeAlert(req.user.userId, envelopeId, rows[0].date).catch(err => console.error('[alert]', err.message));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

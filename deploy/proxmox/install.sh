@@ -9,6 +9,11 @@ INTERVAL="${INTERVAL:-2min}"
 
 chmod +x "$APP_DIR/deploy/proxmox/update.sh"
 
+# curl et jq servent à vérifier le résultat de la CI GitHub avant chaque déploiement
+if ! command -v jq >/dev/null || ! command -v curl >/dev/null; then
+  apt-get update -qq && apt-get install -y -qq jq curl
+fi
+
 cat > /etc/systemd/system/messous-update.service <<UNIT
 [Unit]
 Description=MesSous — pull Git et redéploiement si nouveaux commits

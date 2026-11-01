@@ -60,6 +60,23 @@ export default function ChargeForm({ form, setForm }) {
           </div>
         )}
       </div>
+      <div>
+        <label className="label">Se termine en (optionnel)</label>
+        <div className="flex gap-2">
+          <input
+            className="input"
+            type="month"
+            value={form.endMonth || ''}
+            onChange={e => setForm(f => ({ ...f, endMonth: e.target.value }))}
+          />
+          {form.endMonth && (
+            <button type="button" className="btn-secondary text-xs px-3 whitespace-nowrap" onClick={() => setForm(f => ({ ...f, endMonth: "" }))}>
+              Sans fin
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-slate-400 mt-1">Fin de crédit, d'engagement… La charge compte jusqu'à ce mois inclus.</p>
+      </div>
       {form.amount && freq !== 'monthly' && (
         <p className="text-xs text-slate-400 -mt-2">
           = <strong>{fmt(freq === 'weekly' ? weeklyToMonthly(Number(form.amount)) : monthlyAmount({ amount: form.amount, frequency: freq }))}</strong> / mois dans le budget

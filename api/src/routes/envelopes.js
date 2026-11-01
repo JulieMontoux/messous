@@ -18,6 +18,17 @@ function isUUID(s) {
   return s && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 }
 
+// Reports de restes d'enveloppes (mois cible → montant)
+router.get('/carryovers', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT envelope_id, month, amount FROM envelope_carryovers WHERE user_id = $1 ORDER BY month',
+      [req.user.userId]
+    );
+    res.json(rows.map(r => ({ envelopeId: r.envelope_id, month: r.month, amount: Number(r.amount) })));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/', async (req, res) => {
   try {
     const { rows } = await pool.query(

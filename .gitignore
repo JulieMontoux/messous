@@ -30,3 +30,14 @@ dist-ssr
 # Clés privées (connecteur bancaire)
 secrets/*
 !secrets/.gitkeep
+
+# Sauvegardes de la base
+backups/
+
+# Playwright
+test-results/
+playwright-report/
+
+# Couverture de tests
+coverage/
+api/coverage/

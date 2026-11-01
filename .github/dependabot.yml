@@ -1,0 +1,22 @@
+# Mises à jour automatiques des dépendances (correctifs de sécurité en priorité)
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    groups:
+      outils-de-dev: { dependency-type: development }
+  - package-ecosystem: npm
+    directory: /api
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directory: /api
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }

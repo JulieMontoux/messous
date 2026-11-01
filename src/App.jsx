@@ -14,7 +14,9 @@ import Suggestions from './pages/Suggestions';
 import Settings from './pages/Settings';
 import History from './pages/History';
 import Bank from './pages/Bank';
+import Advances from './pages/Advances';
 import { api, fetchAll } from './api/client';
+import { useTheme } from './hooks/useTheme';
 import {
   totalFixed as getTotalFixed,
   totalProgrammedSavings,
@@ -34,6 +36,7 @@ const PAGES = {
   suggestions: Suggestions,
   history: History,
   bank: Bank,
+  advances: Advances,
   settings: Settings,
 };
 
@@ -141,6 +144,7 @@ function MigrationScreen({ onDone }) {
 
 function BudgetApp() {
   const { state, dispatch, ready, loadError, reload } = useBudget();
+  useTheme(state.profile.theme);
   const { logout } = useAuth();
   const [params, setParams] = useState(readUrlParams);
   const [page, setPageState] = useState(() => (PAGES[params.page] ? params.page : 'dashboard'));
@@ -226,6 +230,14 @@ function BudgetApp() {
 function App() {
   const { isAuthenticated } = useAuth();
   const [authMode, setAuthMode] = useState('login');
+
+  // Après une connexion, l'écran à afficher en cas de déconnexion redevient « connexion »
+  // (et non l'inscription) — ajustement d'état pendant le rendu, sans effet
+  const [wasAuthenticated, setWasAuthenticated] = useState(isAuthenticated);
+  if (wasAuthenticated !== isAuthenticated) {
+    setWasAuthenticated(isAuthenticated);
+    if (isAuthenticated) setAuthMode('login');
+  }
 
   if (!isAuthenticated) {
     return authMode === 'login'

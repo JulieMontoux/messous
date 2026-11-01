@@ -8,7 +8,9 @@
     "build": "vite build",
     "test": "vitest run",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -21,17 +23,28 @@
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "@vitest/coverage-v8": "^5.0.5",
     "autoprefixer": "^10.6.1",
+    "jsdom": "^25.0.1",
     "oxlint": "^1.81.0",
     "postcss": "^8.5.28",
     "tailwindcss": "^3.4.19",
-    "vite": "^8.3.0",
-    "vitest": "^5.0.2"
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   },
   "imports": {
     "#/*": "./src/*"
+  },
+  "overrides": {
+    "source-map-js": "^1.2.2",
+    "postcss-selector-parser": "^6.1.5"
   }
 }

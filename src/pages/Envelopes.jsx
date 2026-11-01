@@ -4,10 +4,10 @@ import { useBudget } from '../context/BudgetContext';
 import { ENVELOPE_CATEGORIES, COLOR_MAP, generateId } from '../data/defaults';
 import {
   fmt, fmtDec, spentInPeriod, weeklyAmount, totalFixedExSavings, totalProgrammedSavings,
-  transactionsInPeriod, envelopeForecast, periodDaysFor,
+  transactionsInPeriod, envelopeForecast, periodDaysFor, idealSplit, pctLabel, carryoverFor,
 } from '../utils/budget';
-import { periodStart, periodEnd, lastWithdrawal, toLocalDate, monthKey, formatDay } from '../utils/period';
-import { computeWithdrawal } from '../utils/withdrawal';
+import { periodStart, periodEnd, lastWithdrawal, toLocalDate, monthKey, formatDay, isCutByClosure } from '../utils/period';
+import { computeWithdrawal, roundUpTo } from '../utils/withdrawal';
 import { api } from '../api/client';
 import { cn } from '../lib/utils';
 import Modal from '../components/Modal';
@@ -18,31 +18,33 @@ function withdrawnSince(withdrawals, since) {
   return withdrawals.filter(w => w.date >= since && w.date <= today).reduce((s, w) => s + w.amount, 0);
 }
 
-function PeriodNote({ mode, since, until, anchor }) {
+function PeriodNote({ mode, since, until, anchor, cut }) {
   if (mode !== 'weekly') return null;
   return (
     <p className="text-xs text-slate-400">
-      Semaine du {formatDay(since)} au {formatDay(until)}
-      {anchor ? ` · calée sur ton retrait du ${formatDay(anchor.date)}` : ' · enregistre un retrait pour caler la semaine sur ce jour'}
+      {cut
+        ? `Du ${formatDay(since)} au ${formatDay(until)} · le mois précédent est clôturé, ses dépenses ne sont plus décomptées`
+        : <>Semaine du {formatDay(since)} au {formatDay(until)}
+          {anchor ? ` · calée sur ton retrait du ${formatDay(anchor.date)}` : ' · enregistre un retrait pour caler la semaine sur ce jour'}</>}
     </p>
   );
 }
 
-function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, idealNeeds, idealWants, idealSavings, tobaccoEnv, onSave, onClose }) {
+function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory, roundToTen, split, viewMode, idealNeeds, idealWants, idealSavings, tobaccoEnv, onSave, onClose }) {
   const [mode, setMode] = useState(viewMode);
   const [calcMode, setCalcMode] = useState('ideal');
   const [record, setRecord] = useState({ date: toLocalDate(), amount: '', note: '' });
-  const roundUp5 = v => Math.ceil(v / 5) * 5;
   const periodLabel = mode === 'weekly' ? '/ semaine' : '/ mois';
   const isIdeal = calcMode === 'ideal';
 
-  const since = periodStart(mode, { withdrawals });
+  const since = periodStart(mode, { withdrawals, savingsHistory });
   const until = periodEnd(mode, { withdrawals });
+  const cut = isCutByClosure(mode, { withdrawals, savingsHistory });
   const anchor = mode === 'weekly' ? lastWithdrawal(withdrawals) : null;
   const withdrawn = withdrawnSince(withdrawals, since);
 
   const { envelopes: envResult, ideal: idealResult, cashSpent, cashInHand } = computeWithdrawal({
-    envelopes, transactions, mode, idealNeeds, idealWants, idealSavings, withdrawn, since,
+    envelopes, transactions, mode, idealNeeds, idealWants, idealSavings, withdrawn, since, roundToTen,
   });
 
   const { needs: needsData, wants: wantData, savings: savingData, tobacco } = envResult;
@@ -56,11 +58,13 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
   const savingsIdealBudget = idealResult.savingsBudget;
   const savingsIdealToWithdraw = idealResult.savingsToWithdraw;
 
-  // Besoins always shown as individual envelopes; wants/savings switch on calcMode
-  const needsTotal = envResult.needsTotal;
+  // Budget idéal : un montant global par groupe (répartition du profil, 50/30/20 par défaut),
+  // seul le tabac reste basé sur son enveloppe. Mode enveloppes : une ligne par enveloppe.
+  const needsSpent = needsData.reduce((s, e) => s + e.spent, 0);
+  const needsTotal = isIdeal ? idealResult.needsToWithdraw : envResult.needsTotal;
   const pleasuresTotal = isIdeal ? pleasuresIdealToWithdraw : envResult.wantsTotal;
   const savingsTotal = isIdeal ? savingsIdealToWithdraw : envResult.savingsTotal;
-  const grandTotal = roundUp5(Math.max(0, needsTotal + tobaccoToWithdraw + pleasuresTotal + savingsTotal - cashInHand));
+  const grandTotal = roundUpTo(Math.max(0, needsTotal + tobaccoToWithdraw + pleasuresTotal + savingsTotal - cashInHand), roundToTen ? 10 : 1);
 
   const hasAnySpending = [...needsData, ...wantData, ...savingData].some(e => e.spent > 0) || tobaccoSpent > 0;
   const recordAmount = record.amount === '' ? grandTotal : Number(record.amount);
@@ -102,12 +106,12 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
         ))}
       </div>
 
-      <PeriodNote mode={mode} since={since} until={until} anchor={anchor} />
+      <PeriodNote mode={mode} since={since} until={until} anchor={anchor} cut={cut} />
 
       {hasAnySpending && (
         <div className="flex items-center gap-2 text-xs text-slate-500 bg-blue-50 rounded-lg px-3 py-2 mb-3">
           <span>✅</span>
-          <span>Dépenses enregistrées (carte et espèces) déduites automatiquement</span>
+          <span>Dépenses enregistrées (carte et espèces) déduites automatiquement · montant barré = déjà couvert</span>
         </div>
       )}
 
@@ -119,29 +123,47 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
         </div>
       )}
 
-      {/* Besoins — toujours lignes individuelles */}
-      {needsData.length > 0 && (
+      {/* Besoins */}
+      {(isIdeal ? idealResult.needsBudget > 0 : needsData.length > 0) && (
         <div className="mb-3">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">🧾 Besoins</p>
-          {needsData.map(e => (
-            <div key={e.id} className="flex items-center justify-between mb-1.5">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
+            🧾 Besoins {isIdeal && <span className="normal-case font-normal">(idéal {pctLabel(split.needs)} du disponible)</span>}
+          </p>
+          {isIdeal ? (
+            <div className="flex items-center justify-between">
               <div>
-                <span className="text-sm text-slate-600">{e.icon} {e.name}</span>
-                {e.spent > 0 && (
-                  <span className="text-xs text-slate-400 ml-1.5">
-                    ({fmt(e.spent)} dépensé)
-                  </span>
+                <span className="text-sm text-slate-600">Total besoins</span>
+                {needsSpent > 0 && (
+                  <span className="text-xs text-slate-400 ml-1.5">({fmt(needsSpent)} dépensé)</span>
                 )}
               </div>
-              <span className={`font-semibold ${e.toWithdraw === 0 ? 'text-slate-300 line-through' : 'text-slate-800'}`}>
-                {fmt(e.toWithdraw === 0 ? e.budget : e.toWithdraw)}
+              <span className={`font-bold ${needsTotal === 0 ? 'text-slate-400' : 'text-needs'}`}>
+                {needsTotal === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(idealResult.needsBudget)}</span>0 €</> : fmt(needsTotal)}
               </span>
             </div>
-          ))}
-          <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-1">
-            <span className="text-xs font-semibold text-slate-500">Sous-total</span>
-            <span className="font-bold text-needs">{fmt(needsTotal)}</span>
-          </div>
+          ) : (
+            <>
+              {needsData.map(e => (
+                <div key={e.id} className="flex items-center justify-between mb-1.5">
+                  <div>
+                    <span className="text-sm text-slate-600">{e.icon} {e.name}</span>
+                    {e.spent > 0 && (
+                      <span className="text-xs text-slate-400 ml-1.5">
+                        ({fmt(e.spent)} dépensé)
+                      </span>
+                    )}
+                  </div>
+                  <span className={`font-semibold ${e.toWithdraw === 0 ? 'text-slate-400' : 'text-slate-800'}`}>
+                    {e.toWithdraw === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(e.budget)}</span>0 €</> : fmt(e.toWithdraw)}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-1">
+                <span className="text-xs font-semibold text-slate-500">Sous-total</span>
+                <span className="font-bold text-needs">{fmt(needsTotal)}</span>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -156,8 +178,8 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
                 <span className="text-xs text-slate-400 ml-1.5">({fmt(tobaccoSpent)} dépensé)</span>
               )}
             </div>
-            <span className={`font-bold ${tobaccoToWithdraw === 0 ? 'text-slate-300 line-through' : 'text-warn'}`}>
-              {fmt(tobaccoToWithdraw === 0 ? tobaccoBudget : tobaccoToWithdraw)}
+            <span className={`font-bold ${tobaccoToWithdraw === 0 ? 'text-slate-400' : 'text-warn'}`}>
+              {tobaccoToWithdraw === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(tobaccoBudget)}</span>0 €</> : fmt(tobaccoToWithdraw)}
             </span>
           </div>
         </div>
@@ -167,7 +189,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
       {(isIdeal ? true : wantData.length > 0) && (
         <div className="mb-3">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
-            🎉 Plaisirs {isIdeal && <span className="normal-case font-normal">(idéal 30% − tabac)</span>}
+            🎉 Plaisirs {isIdeal && <span className="normal-case font-normal">(idéal {pctLabel(split.wants)} − tabac)</span>}
           </p>
           {isIdeal ? (
             <div className="flex items-center justify-between">
@@ -177,8 +199,8 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
                   <span className="text-xs text-slate-400 ml-1.5">({fmt(wantSpent)} dépensé)</span>
                 )}
               </div>
-              <span className={`font-bold ${pleasuresIdealToWithdraw === 0 ? 'text-slate-300 line-through' : 'text-wants'}`}>
-                {fmt(pleasuresIdealToWithdraw === 0 ? pleasuresIdealBudget : pleasuresIdealToWithdraw)}
+              <span className={`font-bold ${pleasuresIdealToWithdraw === 0 ? 'text-slate-400' : 'text-wants'}`}>
+                {pleasuresIdealToWithdraw === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(pleasuresIdealBudget)}</span>0 €</> : fmt(pleasuresIdealToWithdraw)}
               </span>
             </div>
           ) : (
@@ -191,8 +213,8 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
                       <span className="text-xs text-slate-400 ml-1.5">({fmt(e.spent)} dépensé)</span>
                     )}
                   </div>
-                  <span className={`font-semibold ${e.toWithdraw === 0 ? 'text-slate-300 line-through' : 'text-slate-800'}`}>
-                    {fmt(e.toWithdraw === 0 ? e.budget : e.toWithdraw)}
+                  <span className={`font-semibold ${e.toWithdraw === 0 ? 'text-slate-400' : 'text-slate-800'}`}>
+                    {e.toWithdraw === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(e.budget)}</span>0 €</> : fmt(e.toWithdraw)}
                   </span>
                 </div>
               ))}
@@ -209,7 +231,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
       {(isIdeal ? savingsIdealBudget > 0 : savingData.length > 0) && (
         <div className="mb-3">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
-            🏦 Épargne {isIdeal && <span className="normal-case font-normal">(20% du disponible)</span>}
+            🏦 Épargne {isIdeal && <span className="normal-case font-normal">({pctLabel(split.savings)} du disponible)</span>}
           </p>
           {isIdeal ? (
             <div className="flex items-center justify-between">
@@ -219,8 +241,8 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
                   <span className="text-xs text-slate-400 ml-1.5">({fmt(savingSpent)} dépensé)</span>
                 )}
               </div>
-              <span className={`font-bold ${savingsIdealToWithdraw === 0 ? 'text-slate-300 line-through' : 'text-savings'}`}>
-                {fmt(savingsIdealToWithdraw === 0 ? savingsIdealBudget : savingsIdealToWithdraw)}
+              <span className={`font-bold ${savingsIdealToWithdraw === 0 ? 'text-slate-400' : 'text-savings'}`}>
+                {savingsIdealToWithdraw === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(savingsIdealBudget)}</span>0 €</> : fmt(savingsIdealToWithdraw)}
               </span>
             </div>
           ) : (
@@ -233,8 +255,8 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
                       <span className="text-xs text-slate-400 ml-1.5">({fmt(e.spent)} dépensé)</span>
                     )}
                   </div>
-                  <span className={`font-semibold ${e.toWithdraw === 0 ? 'text-slate-300 line-through' : 'text-savings'}`}>
-                    {fmt(e.toWithdraw === 0 ? e.budget : e.toWithdraw)}
+                  <span className={`font-semibold ${e.toWithdraw === 0 ? 'text-slate-400' : 'text-savings'}`}>
+                    {e.toWithdraw === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(e.budget)}</span>0 €</> : fmt(e.toWithdraw)}
                   </span>
                 </div>
               ))}
@@ -272,7 +294,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
               className="input font-semibold"
               type="number"
               min="0"
-              step="5"
+              step={roundToTen ? 10 : 1}
               placeholder={String(grandTotal)}
               value={record.amount}
               onChange={e => setRecord(r => ({ ...r, amount: e.target.value }))}
@@ -297,11 +319,12 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, viewMode, ideal
 const BLANK_ENV = { name: '', categoryId: 'groceries', icon: '🛒', colorKey: 'needs', type: 'need', budgetMonthly: '' };
 const blankTx = () => ({ amount: '', note: '', date: toLocalDate(), paymentMethod: 'cash', recurring: false, dayOfMonth: new Date().getDate() });
 
-function EnvelopeCard({ env, transactions, viewMode, since, onEdit, onDelete, onAddTx, onDeleteTx }) {
+function EnvelopeCard({ env, transactions, viewMode, since, carry = 0, onEdit, onDelete, onAddTx, onDeleteTx }) {
   const [open, setOpen] = useState(false);
   const colors = COLOR_MAP[env.colorKey] || COLOR_MAP.needs;
   const isSaving = env.type === 'saving';
-  const budget = viewMode === 'weekly' ? weeklyAmount(env.budgetMonthly) : env.budgetMonthly;
+  // Le reste reporté du mois précédent s'ajoute au budget du mois (vue mensuelle)
+  const budget = viewMode === 'weekly' ? weeklyAmount(env.budgetMonthly) : env.budgetMonthly + carry;
   const spent = spentInPeriod(transactions, env.id, viewMode, { since });
   const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
   const remaining = budget - spent;
@@ -326,7 +349,10 @@ function EnvelopeCard({ env, transactions, viewMode, since, onEdit, onDelete, on
             </div>
           </div>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-slate-400">{fmt(spent)} {isSaving ? 'versés' : ''} / {fmt(budget)}</span>
+            <span className="text-xs text-slate-400">
+              {fmt(spent)} {isSaving ? 'versés' : ''} / {fmt(budget)}
+              {carry > 0 && viewMode !== 'weekly' && <span className="text-savings"> (dont {fmt(carry)} reporté)</span>}
+            </span>
             <span className="text-xs font-medium px-1.5 py-0.5 rounded-full" style={{ background: colors.bg, color: colors.text }}>
               {isSaving ? 'Épargne' : env.type === 'need' ? 'Besoin' : 'Envie'}
             </span>
@@ -421,7 +447,10 @@ function WithdrawalsCard({ withdrawals, onDelete }) {
       <div className="divide-y divide-slate-50">
         {withdrawals.slice(0, 5).map(w => (
           <div key={w.id} className="flex items-center justify-between py-1.5 text-sm">
-            <span className="text-slate-600">{formatDay(w.date, { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+            <span className="text-slate-600">
+              {formatDay(w.date, { weekday: 'short', day: 'numeric', month: 'short' })}
+              {w.bankTransactionId && <span className="text-[10px] text-slate-400 ml-1.5" title="Retrouvé sur le relevé bancaire">🏦 banque</span>}
+            </span>
             <span className="flex items-center gap-2">
               {w.suggestedAmount != null && w.suggestedAmount !== w.amount && (
                 <span className="text-xs text-slate-400">conseillé {fmt(w.suggestedAmount)}</span>
@@ -438,16 +467,18 @@ function WithdrawalsCard({ withdrawals, onDelete }) {
 
 export default function Envelopes() {
   const { state, dispatch } = useBudget();
-  const { envelopes, transactions, settings, profile, fixedCharges, withdrawals } = state;
+  const { envelopes, transactions, settings, profile, fixedCharges, withdrawals, savingsHistory } = state;
   const viewMode = settings.viewMode;
-  const since = periodStart(viewMode, { withdrawals });
+  const since = periodStart(viewMode, { withdrawals, savingsHistory });
   const until = periodEnd(viewMode, { withdrawals });
+  const cut = isCutByClosure(viewMode, { withdrawals, savingsHistory });
   const anchor = viewMode === 'weekly' ? lastWithdrawal(withdrawals) : null;
 
   const afterFixed = Math.max(0, profile.netSalary - totalFixedExSavings(fixedCharges) - totalProgrammedSavings(fixedCharges));
-  const idealNeeds = afterFixed * 0.5;
-  const idealWants = afterFixed * 0.3;
-  const idealSavings = afterFixed * 0.2;
+  const split = idealSplit(profile);
+  const idealNeeds = afterFixed * split.needs;
+  const idealWants = afterFixed * split.wants;
+  const idealSavings = afterFixed * split.savings;
   const tobaccoEnv = envelopes.find(e => e.categoryId === 'tobacco');
 
   const [envModal, setEnvModal] = useState(null);
@@ -543,7 +574,7 @@ export default function Envelopes() {
         ))}
       </div>
 
-      <PeriodNote mode={viewMode} since={since} until={until} anchor={anchor} />
+      <PeriodNote mode={viewMode} since={since} until={until} anchor={anchor} cut={cut} />
 
       {/* Summary bar */}
       {envelopes.length > 0 && (
@@ -590,6 +621,7 @@ export default function Envelopes() {
                       transactions={transactions}
                       viewMode={viewMode}
                       since={since}
+                      carry={carryoverFor(state.carryovers, env.id)}
                       onEdit={() => openEditEnv(env)}
                       onDelete={() => {
                         if (window.confirm(`Supprimer l'enveloppe « ${env.name} » et ses dépenses ?`)) dispatch({ type: 'DELETE_ENVELOPE', payload: env.id });
@@ -721,7 +753,7 @@ export default function Envelopes() {
               </span>
             </div>
             <div className={`w-9 h-5 rounded-full transition-colors ${txForm.recurring ? 'bg-primary' : 'bg-slate-200'}`}>
-              <div className={`w-4 h-4 rounded-full bg-white shadow-sm mt-0.5 transition-transform ${txForm.recurring ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              <div className={`knob w-4 h-4 rounded-full bg-white shadow-sm mt-0.5 transition-transform ${txForm.recurring ? 'translate-x-4' : 'translate-x-0.5'}`} />
             </div>
           </div>
           {txForm.recurring && (
@@ -749,6 +781,9 @@ export default function Envelopes() {
           envelopes={envelopes}
           transactions={transactions}
           withdrawals={withdrawals}
+          savingsHistory={savingsHistory}
+          roundToTen={profile.roundWithdrawals !== false}
+          split={split}
           viewMode={viewMode}
           idealNeeds={idealNeeds}
           idealWants={idealWants}

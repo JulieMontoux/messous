@@ -30,16 +30,33 @@ export function isDueInMonth(charge, month1to12) {
   return (month1to12 - charge.dueMonth + 12) % 3 === 0;
 }
 
-export function totalFixed(charges) {
-  return charges.reduce((sum, c) => sum + monthlyAmount(c), 0);
+// Une charge avec un mois de fin (crédit, engagement…) compte jusqu'à ce mois inclus
+export function isChargeActive(charge, month = monthKey()) {
+  return !charge.endMonth || charge.endMonth >= month;
 }
 
-export function totalFixedExSavings(charges) {
-  return charges.filter(c => c.categoryId !== 'savings').reduce((sum, c) => sum + monthlyAmount(c), 0);
+// Nombre de mois de paiement restants, mois en cours inclus (null = sans fin)
+export function monthsLeft(charge, month = monthKey()) {
+  if (!charge.endMonth) return null;
+  const [ey, em] = charge.endMonth.split('-').map(Number);
+  const [y, m] = month.split('-').map(Number);
+  return Math.max(0, (ey * 12 + em) - (y * 12 + m) + 1);
 }
 
-export function totalProgrammedSavings(charges) {
-  return charges.filter(c => c.categoryId === 'savings').reduce((sum, c) => sum + monthlyAmount(c), 0);
+export function activeCharges(charges, month = monthKey()) {
+  return charges.filter(c => isChargeActive(c, month));
+}
+
+export function totalFixed(charges, month) {
+  return activeCharges(charges, month).reduce((sum, c) => sum + monthlyAmount(c), 0);
+}
+
+export function totalFixedExSavings(charges, month) {
+  return activeCharges(charges, month).filter(c => c.categoryId !== 'savings').reduce((sum, c) => sum + monthlyAmount(c), 0);
+}
+
+export function totalProgrammedSavings(charges, month) {
+  return activeCharges(charges, month).filter(c => c.categoryId === 'savings').reduce((sum, c) => sum + monthlyAmount(c), 0);
 }
 
 export function totalVariableEnvelopes(envelopes) {
@@ -52,14 +69,6 @@ export function totalExpenseEnvelopes(envelopes) {
 
 export function totalSavingEnvelopesBudget(envelopes) {
   return envelopes.filter(e => e.type === 'saving').reduce((sum, e) => sum + (Number(e.budgetMonthly) || 0), 0);
-}
-
-export function actualSavingsInPeriod(transactions, envelopes, mode, opts = {}) {
-  const savingEnvIds = new Set(envelopes.filter(e => e.type === 'saving').map(e => e.id));
-  const since = opts.since || periodStart(mode, opts);
-  return transactions
-    .filter(t => savingEnvIds.has(t.envelopeId) && t.date >= since)
-    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 }
 
 // What's left after everything — potential end-of-month savings
@@ -135,12 +144,6 @@ export function envelopeForecast({ budget, spent, since, periodDays, now = new D
   };
 }
 
-export const FORECAST_LABEL = {
-  ok: { text: 'Dans les clous', cls: 'text-savings' },
-  pace: { text: 'Rythme un peu soutenu — rien de grave, le mois est en cours', cls: 'text-warn' },
-  over: { text: 'Budget dépassé', cls: 'text-danger' },
-};
-
 export function periodDaysFor(mode, now = new Date()) {
   return mode === 'weekly' ? 7 : daysInMonth(now);
 }
@@ -153,24 +156,15 @@ export function realSpending({ transactions, envelopes, bankTransactions = [], s
   const cash = tx.filter(t => (t.paymentMethod || 'cash') === 'cash').reduce((s, t) => s + Number(t.amount), 0);
   const cardClassified = tx.filter(t => t.paymentMethod === 'card').reduce((s, t) => s + Number(t.amount), 0);
   const unclassified = bankTransactions
-    .filter(b => b.date >= since && b.amount < 0 && b.isCard && !b.ignored && !b.envelopeId && !b.fixedChargeId)
+    .filter(b => b.date >= since && b.amount < 0 && b.isCard && !b.ignored && !b.envelopeId && !b.fixedChargeId && !b.withdrawalId && !b.advanceId)
     .reduce((s, b) => s + Math.abs(b.amount), 0);
   return { cash, cardClassified, unclassified, total: cash + cardClassified + unclassified };
 }
 
 // Opération bancaire à classer : paiement carte ou prélèvement, ni classé ni ignoré
 export function isBankTodo(b) {
-  return b.amount < 0 && !b.ignored && !b.envelopeId && !b.fixedChargeId
+  return b.amount < 0 && !b.ignored && !b.envelopeId && !b.fixedChargeId && !b.withdrawalId && !b.advanceId
     && (b.isCard || /PRLV|PRELEV/i.test(b.label || ''));
-}
-
-export function isCurrentMonth(month, now = new Date()) {
-  return month === monthKey(now);
-}
-
-export function savingsRate(salary, charges, envelopes) {
-  if (!salary) return 0;
-  return Math.max(0, (computedSavings(salary, charges, envelopes) / salary) * 100);
 }
 
 export function donutData(salary, charges, envelopes) {
@@ -204,6 +198,153 @@ export function realSavings(snap) {
 // Normalise le formulaire en charge à enregistrer
 export function chargeFromForm(form) {
   const raw = Number(form.amount);
-  if (form.frequency === 'weekly') return { ...form, frequency: 'monthly', dueMonth: null, amount: weeklyToMonthly(raw) };
-  return { ...form, amount: raw, dueMonth: form.frequency === 'monthly' ? null : Number(form.dueMonth) };
+  const endMonth = form.endMonth || null;
+  if (form.frequency === 'weekly') return { ...form, frequency: 'monthly', dueMonth: null, endMonth, amount: weeklyToMonthly(raw) };
+  return { ...form, amount: raw, endMonth, dueMonth: form.frequency === 'monthly' ? null : Number(form.dueMonth) };
+}
+
+// Répartition du budget idéal (profil), en fractions : 50/30/20 par défaut
+export function idealSplit(profile = {}) {
+  const needs = Number(profile.idealNeedsPct ?? 50);
+  const wants = Number(profile.idealWantsPct ?? 30);
+  const savings = Number(profile.idealSavingsPct ?? 20);
+  const total = needs + wants + savings;
+  if (!(total > 0)) return { needs: 0.5, wants: 0.3, savings: 0.2 };
+  return { needs: needs / total, wants: wants / total, savings: savings / total };
+}
+
+export const pctLabel = f => `${Math.round(f * 100)} %`;
+
+// Reste reporté sur une enveloppe pour un mois donné (choisi à la clôture du mois précédent)
+export function carryoverFor(carryovers = [], envelopeId, month = monthKey()) {
+  return carryovers
+    .filter(c => c.envelopeId === envelopeId && c.month === month)
+    .reduce((s, c) => s + Number(c.amount), 0);
+}
+
+// Jour habituel de prélèvement d'une charge, appris du dernier paiement bancaire rattaché
+export function chargeDueDay(charge) {
+  return charge.lastPaidAt ? Number(String(charge.lastPaidAt).slice(8, 10)) : null;
+}
+
+// Charge déjà payée pour l'échéance du mois en cours ?
+export function chargePaidThisMonth(charge, now = new Date()) {
+  if (!charge.lastPaidAt) return false;
+  const paid = String(charge.lastPaidAt).slice(0, 10);
+  const span = { quarterly: 3, yearly: 12 }[charge.frequency] || 1;
+  const [py, pm] = paid.split('-').map(Number);
+  const monthsAgo = (now.getFullYear() - py) * 12 + (now.getMonth() + 1 - pm);
+  return monthsAgo < span;
+}
+
+// Prélèvements restant à passer ce mois-ci (charges actives, dues ce mois, pas encore payées)
+export function upcomingCharges(charges, now = new Date()) {
+  const month = monthKey(now);
+  return charges
+    .filter(c => isChargeActive(c, month) && isDueInMonth(c, now.getMonth() + 1) && !chargePaidThisMonth(c, now))
+    .map(c => ({ ...c, dueDay: chargeDueDay(c) }))
+    .sort((a, b) => (a.dueDay ?? 99) - (b.dueDay ?? 99));
+}
+
+// Solde prévisionnel de fin de mois :
+// solde actuel − prélèvements à venir − budget d'enveloppes pas encore dépensé (hors espèces déjà
+// retirées, qui ont déjà quitté le compte) − épargne d'enveloppes pas encore versée
+export function monthEndForecast({ balance, charges, envelopes, transactions, carryovers = [], withdrawals = [], now = new Date() }) {
+  const month = monthKey(now);
+  const since = `${month}-01`;
+  const upcoming = upcomingCharges(charges, now);
+  const chargesLeft = upcoming.reduce((s, c) => s + Number(c.amount), 0);
+
+  let envelopesLeft = 0;
+  let savingsLeft = 0;
+  for (const e of envelopes) {
+    const budget = Number(e.budgetMonthly) + carryoverFor(carryovers, e.id, month);
+    const spent = transactions.filter(t => t.envelopeId === e.id && t.date >= since).reduce((s, t) => s + Number(t.amount), 0);
+    const left = Math.max(0, budget - spent);
+    if (e.type === 'saving') savingsLeft += left; else envelopesLeft += left;
+  }
+  const withdrawn = withdrawals.filter(w => w.date >= since).reduce((s, w) => s + Number(w.amount), 0);
+  const cashSpent = transactions
+    .filter(t => t.date >= since && (t.paymentMethod || 'cash') === 'cash')
+    .reduce((s, t) => s + Number(t.amount), 0);
+  const cashInPocket = Math.max(0, withdrawn - cashSpent);
+  const envelopesFromAccount = Math.max(0, envelopesLeft - cashInPocket);
+
+  return {
+    balance,
+    upcoming,
+    chargesLeft,
+    envelopesLeft: envelopesFromAccount,
+    savingsLeft,
+    forecast: balance == null ? null : balance - chargesLeft - envelopesFromAccount - savingsLeft,
+  };
+}
+
+// Dépenses par mois sur les `count` derniers mois (mois en cours inclus), par enveloppe ou au total
+export function monthlySpendingSeries(transactions, envelopes, { envelopeId = null, count = 12, now = new Date() } = {}) {
+  const savingIds = new Set(envelopes.filter(e => e.type === 'saving').map(e => e.id));
+  const months = [];
+  for (let i = count - 1; i >= 0; i--) months.push(monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
+  const totals = Object.fromEntries(months.map(m => [m, 0]));
+  for (const t of transactions) {
+    const m = String(t.date).slice(0, 7);
+    if (!(m in totals)) continue;
+    if (envelopeId ? t.envelopeId !== envelopeId : savingIds.has(t.envelopeId)) continue;
+    totals[m] += Number(t.amount) || 0;
+  }
+  return months.map(m => ({ month: m, total: Math.round(totals[m] * 100) / 100 }));
+}
+
+// Évolution par enveloppe : dernier mois terminé vs moyenne des 3 mois précédents
+export function spendingTrends(transactions, envelopes, now = new Date()) {
+  return envelopes
+    .filter(e => e.type !== 'saving')
+    .map(e => {
+      const series = monthlySpendingSeries(transactions, envelopes, { envelopeId: e.id, count: 5, now });
+      const last = series[3].total;
+      const prev = series.slice(0, 3).map(x => x.total);
+      const avg = prev.reduce((s, v) => s + v, 0) / 3;
+      return { envelope: e, last, avg, change: avg > 0 ? (last - avg) / avg : null };
+    })
+    .filter(t => t.last > 0 || t.avg > 0)
+    .sort((a, b) => Math.abs(b.last - b.avg) - Math.abs(a.last - a.avg));
+}
+
+// Plan d'un objectif : versement nécessaire pour tenir la date, date atteinte au rythme prévu, retard
+export function goalPlan(goal, now = new Date()) {
+  const remaining = Math.max(0, goal.targetAmount - goal.currentAmount);
+  const contribution = Number(goal.monthlyContribution) || 0;
+  let monthsLeft = null;
+  if (goal.targetDate) {
+    const [y, m] = goal.targetDate.split('-').map(Number);
+    monthsLeft = (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth());
+  }
+  const needed = remaining > 0 && monthsLeft != null ? remaining / Math.max(1, monthsLeft) : null;
+  let reachMonth = null;
+  if (remaining > 0 && contribution > 0) {
+    const n = Math.ceil(remaining / contribution);
+    reachMonth = monthKey(new Date(now.getFullYear(), now.getMonth() + n, 1));
+  }
+  const late = remaining > 0 && needed != null && (contribution === 0 ? monthsLeft <= 0 : contribution + 0.5 < needed);
+  return { remaining, contribution, monthsLeft, needed, reachMonth, late, shortfall: late && needed != null ? needed - contribution : 0 };
+}
+
+// Tabac : achats du mois (≈ nombre de paquets d'après le prix) et compteur d'arrêt
+export function tobaccoStats({ profile, envelopes, transactions, now = new Date() }) {
+  const price = Number(profile.tobaccoPackPrice) || 0;
+  const perWeek = Number(profile.tobaccoPacksPerWeek) || 0;
+  const env = envelopes.find(e => e.categoryId === 'tobacco');
+  const month = monthKey(now);
+  const spentMonth = env
+    ? transactions.filter(t => t.envelopeId === env.id && String(t.date).startsWith(month)).reduce((s, t) => s + Number(t.amount), 0)
+    : 0;
+  const unitsMonth = price > 0 ? spentMonth / price : 0;
+  const expectedSoFar = perWeek * (now.getDate() / 7);
+
+  let quit = null;
+  if (profile.tobaccoQuitDate) {
+    const days = Math.max(0, daysBetween(String(profile.tobaccoQuitDate).slice(0, 10), toLocalDate(now)));
+    quit = { days, saved: Math.round(days * (perWeek / 7) * price), unitsAvoided: Math.round(days * (perWeek / 7)) };
+  }
+  return { spentMonth, unitsMonth, expectedSoFar, quit };
 }

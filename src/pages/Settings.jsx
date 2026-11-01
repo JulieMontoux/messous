@@ -1,11 +1,13 @@
-import { useState } from 'react';
-import { ChevronRight, AlertTriangle, LogOut, Mail, Send } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { pushSupported, currentSubscription, enablePush, disablePush } from '../utils/push';
+import { ChevronRight, AlertTriangle, LogOut, Mail, Send, Download } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { useAuth } from '../context/AuthContext';
 import { REGIONS, ENVELOPE_CATEGORIES, generateId, getTobaccoType, tobaccoMonthlyBudget } from '../data/defaults';
 import { SUPERMARKETS, getSupermarket } from '../data/supermarkets';
 import { api } from '../api/client';
 import { fmt } from '../utils/budget';
+import { monthKey } from '../utils/period';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
 import TobaccoFields from '../components/TobaccoFields';
@@ -71,6 +73,7 @@ function TobaccoCard({ profile, envelopes, dispatch }) {
           {' '}({Math.floor(tobaccoEnv.budgetMonthly / (Number(draft.tobaccoPackPrice) || 1))} {getTobaccoType(draft.tobaccoType).unitPlural})
         </p>
       )}
+      <QuitTobacco profile={profile} tobaccoEnv={tobaccoEnv} dispatch={dispatch} />
       <div className="flex flex-wrap gap-2">
         <button className="btn-primary text-sm py-2" disabled={!dirty} onClick={() => save(false)}>Enregistrer</button>
         <button className="btn-secondary text-sm py-2" onClick={() => save(true)}>
@@ -78,6 +81,290 @@ function TobaccoCard({ profile, envelopes, dispatch }) {
         </button>
         {saved && <span className="text-xs text-savings self-center">✓ Enregistré</span>}
       </div>
+    </div>
+  );
+}
+
+// Suppression réelle de toutes les données côté serveur (compte conservé), après mot de passe
+function ResetModal({ onClose, onDone }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ready = password && confirm.trim().toUpperCase() === 'SUPPRIMER';
+
+  async function submit() {
+    setBusy(true);
+    setError('');
+    try {
+      await api.post('/api/profile/reset', { password });
+      onDone();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title="⚠️ Réinitialiser toutes les données ?"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>Annuler</button>
+          <button className="btn-danger" disabled={!ready || busy} onClick={submit}>
+            {busy ? 'Suppression…' : 'Tout supprimer'}
+          </button>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-600">
+        Supprime définitivement sur le serveur : profil, charges, enveloppes, dépenses, retraits, historique,
+        objectifs, opérations et connexions bancaires. Ton compte (e-mail et mot de passe) est conservé et tu repars
+        de l'écran de démarrage.
+      </p>
+      <p className="text-xs text-slate-500">
+        Les sauvegardes quotidiennes du serveur permettent de revenir en arrière (voir README → Restaurer).
+      </p>
+      <div>
+        <label className="label">Ton mot de passe</label>
+        <input className="input" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} />
+      </div>
+      <div>
+        <label className="label">Tape SUPPRIMER pour confirmer</label>
+        <input className="input" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="SUPPRIMER" />
+      </div>
+      {error && <p className="text-sm text-danger">{error}</p>}
+    </Modal>
+  );
+}
+
+function formatMonthFr(yyyyMM) {
+  const [y, m] = yyyyMM.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+}
+
+// Salaire avec date d'effet : immédiat ou à partir d'un mois futur (appliqué automatiquement)
+function SalaryModal({ profile, dispatch, onClose }) {
+  const now = new Date();
+  const nextMonth = monthKey(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+  const [amount, setAmount] = useState(profile.nextSalary ?? profile.netSalary);
+  const [when, setWhen] = useState(profile.nextSalaryFrom ? 'custom' : 'now');
+  const [custom, setCustom] = useState(profile.nextSalaryFrom || nextMonth);
+  const [error, setError] = useState('');
+  const from = when === 'now' ? monthKey() : when === 'next' ? nextMonth : custom;
+
+  async function save() {
+    try {
+      const updated = await api.put('/api/profile/salary', { amount: Number(amount), from });
+      dispatch({ type: 'SET_PROFILE', payload: updated });
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <Modal
+      title="Salaire net mensuel"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>Annuler</button>
+          <button className="btn-primary" onClick={save} disabled={!(Number(amount) >= 0) || amount === ''}>Enregistrer</button>
+        </>
+      }
+    >
+      <input className="input text-lg" type="number" value={amount} onChange={e => setAmount(e.target.value)} autoFocus />
+      <div>
+        <label className="label">À partir de</label>
+        <div className="grid grid-cols-3 bg-slate-100 rounded-xl p-1 gap-1">
+          {[{ id: 'now', label: 'Ce mois-ci' }, { id: 'next', label: 'Mois prochain' }, { id: 'custom', label: 'Autre mois' }].map(o => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => setWhen(o.id)}
+              className={`py-2 rounded-lg text-xs font-semibold transition-colors ${when === o.id ? 'bg-white text-primary shadow-sm' : 'text-slate-500'}`}
+            >{o.label}</button>
+          ))}
+        </div>
+        {when === 'custom' && (
+          <input className="input mt-2" type="month" min={monthKey()} value={custom} onChange={e => setCustom(e.target.value)} />
+        )}
+      </div>
+      <p className="text-xs text-slate-500">
+        {from <= monthKey()
+          ? 'Appliqué tout de suite, y compris au mois en cours. Les mois passés ne changent pas.'
+          : `Appliqué automatiquement à partir de ${formatMonthFr(from)} : ${formatMonthFr(monthKey())} garde le salaire actuel (${fmt(profile.netSalary)}).`}
+      </p>
+      {error && <p className="text-sm text-danger">{error}</p>}
+    </Modal>
+  );
+}
+
+// Répartition du budget idéal (besoins / plaisirs / épargne), total 100 %
+function IdealSplitCard({ profile, dispatch }) {
+  const [draft, setDraft] = useState({
+    idealNeedsPct: profile.idealNeedsPct ?? 50,
+    idealWantsPct: profile.idealWantsPct ?? 30,
+    idealSavingsPct: profile.idealSavingsPct ?? 20,
+  });
+  const total = Number(draft.idealNeedsPct) + Number(draft.idealWantsPct) + Number(draft.idealSavingsPct);
+  const dirty = ['idealNeedsPct', 'idealWantsPct', 'idealSavingsPct'].some(k => Number(draft[k]) !== Number(profile[k] ?? { idealNeedsPct: 50, idealWantsPct: 30, idealSavingsPct: 20 }[k]));
+  const fields = [
+    { key: 'idealNeedsPct', label: '🧾 Besoins' },
+    { key: 'idealWantsPct', label: '🎉 Plaisirs' },
+    { key: 'idealSavingsPct', label: '🏦 Épargne' },
+  ];
+
+  return (
+    <div className="card space-y-3">
+      <SectionTitle>Budget idéal</SectionTitle>
+      <p className="text-xs text-slate-400 -mt-2">Répartition de ce qui reste après les charges fixes (règle 50/30/20 par défaut).</p>
+      <div className="grid grid-cols-3 gap-2">
+        {fields.map(f => (
+          <div key={f.key}>
+            <label className="label">{f.label}</label>
+            <div className="relative">
+              <input
+                className="input pr-7"
+                type="number"
+                min="0"
+                max="100"
+                value={draft[f.key]}
+                onChange={e => setDraft(d => ({ ...d, [f.key]: e.target.value === '' ? '' : Number(e.target.value) }))}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between">
+        <span className={`text-xs font-semibold ${total === 100 ? 'text-savings' : 'text-danger'}`}>Total : {total} %{total !== 100 && ' (doit faire 100 %)'}</span>
+        <div className="flex gap-2">
+          <button className="btn-secondary text-xs py-1.5" onClick={() => setDraft({ idealNeedsPct: 50, idealWantsPct: 30, idealSavingsPct: 20 })}>50/30/20</button>
+          <button
+            className="btn-primary text-xs py-1.5"
+            disabled={total !== 100 || !dirty}
+            onClick={() => dispatch({ type: 'UPDATE_PROFILE', payload: draft })}
+          >Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Mode « j'arrête » : compteur de jours et d'économies, enveloppe tabac remise à zéro si souhaité
+function QuitTobacco({ profile, tobaccoEnv, dispatch }) {
+  if (profile.tobaccoQuitDate) {
+    const days = Math.max(0, Math.round((new Date() - new Date(`${String(profile.tobaccoQuitDate).slice(0, 10)}T00:00:00`)) / 86400000));
+    const saved = Math.round(days * ((Number(profile.tobaccoPacksPerWeek) || 0) / 7) * (Number(profile.tobaccoPackPrice) || 0));
+    return (
+      <div className="rounded-xl bg-savings/10 px-3 py-2.5 flex items-center justify-between gap-2">
+        <p className="text-sm text-savings font-medium">🎉 {days} jour{days > 1 ? 's' : ''} sans tabac · {fmt(saved)} économisés</p>
+        <button
+          className="text-xs text-slate-400 hover:text-slate-600 flex-shrink-0"
+          onClick={() => dispatch({ type: 'UPDATE_PROFILE', payload: { tobaccoQuitDate: '' } })}
+        >J'ai repris</button>
+      </div>
+    );
+  }
+  return (
+    <button
+      className="w-full rounded-xl border-2 border-dashed border-savings/40 text-savings text-sm font-medium py-2 hover:bg-savings/5"
+      onClick={() => {
+        dispatch({ type: 'UPDATE_PROFILE', payload: { tobaccoQuitDate: new Date().toISOString().slice(0, 10) } });
+        if (tobaccoEnv && tobaccoEnv.budgetMonthly > 0 && window.confirm('Mettre l\'enveloppe tabac à 0 € ? (l\'argent économisé reste dans ton budget)')) {
+          dispatch({ type: 'UPDATE_ENVELOPE', payload: { ...tobaccoEnv, budgetMonthly: 0 } });
+        }
+      }}
+    >
+      🚭 J'arrête de fumer — lancer le compteur
+    </button>
+  );
+}
+
+// Notifications push sur cet appareil (téléphone : app installée sur l'écran d'accueil)
+function PushToggle() {
+  const [on, setOn] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const supported = pushSupported();
+
+  useEffect(() => {
+    if (supported) currentSubscription().then(s => setOn(!!s)).catch(() => {});
+  }, [supported]);
+
+  async function toggle(v) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      if (v) {
+        await enablePush();
+        await api.post('/api/push/test');
+        setMsg({ ok: true, text: 'Notification de test envoyée ✅' });
+      } else {
+        await disablePush();
+      }
+      setOn(v);
+    } catch (err) {
+      setMsg({ ok: false, text: err.message });
+    }
+    setBusy(false);
+  }
+
+  if (!supported) {
+    return (
+      <p className="text-xs text-slate-400 py-3 border-b border-slate-50">
+        📱 Notifications : non disponibles dans ce navigateur. Sur iPhone, installe d'abord l'app
+        (Partager → « Sur l'écran d'accueil ») puis ouvre-la depuis l'icône.
+      </p>
+    );
+  }
+  return (
+    <>
+      <Toggle
+        label="📱 Notifications sur cet appareil"
+        sub="Mêmes alertes que par e-mail (enveloppes, fin de mois, bilan, banque), directement sur l'écran"
+        value={on}
+        onChange={v => !busy && toggle(v)}
+      />
+      {msg && <p className={`text-xs pb-2 ${msg.ok ? 'text-savings' : 'text-danger'}`}>{msg.text}</p>}
+    </>
+  );
+}
+
+const EXPORTS = [
+  { kind: 'depenses', label: 'Dépenses' },
+  { kind: 'banque', label: 'Opérations bancaires' },
+  { kind: 'historique', label: 'Historique mensuel' },
+  { kind: 'charges', label: 'Charges fixes' },
+  { kind: 'retraits', label: 'Retraits' },
+  { kind: 'avances', label: 'Avances' },
+];
+
+// Export CSV (s'ouvre directement dans Excel / Numbers / LibreOffice)
+function ExportButtons() {
+  const [error, setError] = useState('');
+  async function run(kind) {
+    setError('');
+    try {
+      await api.download(`/api/export/${kind}.csv`, `messous-${kind}-${new Date().toISOString().slice(0, 10)}.csv`);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+  return (
+    <div className="mb-3">
+      <p className="text-xs text-slate-500 mb-2">Exporter en CSV (Excel, Numbers…)</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {EXPORTS.map(e => (
+          <button key={e.kind} onClick={() => run(e.kind)} className="btn-secondary text-xs py-2 flex items-center justify-center gap-1.5">
+            <Download size={13} /> {e.label}
+          </button>
+        ))}
+      </div>
+      {error && <p className="text-xs text-danger mt-1">{error}</p>}
     </div>
   );
 }
@@ -99,14 +386,15 @@ function AlertsCard({ profile, dispatch }) {
 
   return (
     <div className="card">
-      <SectionTitle>Alertes & e-mails</SectionTitle>
+      <SectionTitle>Alertes & notifications</SectionTitle>
       {!profile.mailConfigured && (
         <p className="text-xs text-warn bg-warn/10 rounded-lg px-3 py-2 my-2">
           L'envoi d'e-mails n'est pas encore configuré sur le serveur (variables SMTP_* du fichier .env).
         </p>
       )}
+      <PushToggle />
       <Toggle
-        label="🔔 Alertes d'enveloppes par e-mail"
+        label="🔔 Alertes d'enveloppes"
         sub="Quand une enveloppe atteint le seuil, puis quand elle est dépassée. Tabac : quand il ne reste plus de quoi acheter un paquet."
         value={profile.alertsEnabled}
         onChange={v => update({ alertsEnabled: v })}
@@ -125,6 +413,12 @@ function AlertsCard({ profile, dispatch }) {
           </div>
         </div>
       )}
+      <Toggle
+        label="📊 Bilan mensuel"
+        sub="Le 1er du mois : dépenses par enveloppe, dépassements, épargne et comparaison avec le mois d'avant"
+        value={profile.monthlyReportEmail !== false}
+        onChange={v => update({ monthlyReportEmail: v })}
+      />
       <Toggle
         label="🐷 Rappel de fin de mois"
         sub="Le dernier jour du mois, un e-mail pour enregistrer l'épargne réelle et le reste"
@@ -176,7 +470,7 @@ function Toggle({ label, sub, value, onChange }) {
         onClick={() => onChange(!value)}
         className={`w-11 h-6 flex-shrink-0 rounded-full transition-colors relative ${value ? 'bg-primary' : 'bg-slate-200'}`}
       >
-        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${value ? 'left-6' : 'left-1'}`} />
+        <div className={`absolute top-1 knob w-4 h-4 bg-white rounded-full shadow transition-all ${value ? 'left-6' : 'left-1'}`} />
       </button>
     </div>
   );
@@ -189,6 +483,7 @@ export default function Settings() {
   const [editModal, setEditModal] = useState(null);
   const [resetModal, setResetModal] = useState(false);
   const [editVal, setEditVal] = useState('');
+  const [salaryOpen, setSalaryOpen] = useState(false);
 
   function openEdit(field, current) {
     setEditModal(field);
@@ -222,8 +517,20 @@ export default function Settings() {
         <Row
           label="Salaire net mensuel"
           value={`${Number(profile.netSalary).toLocaleString('fr-FR')} €`}
-          onClick={() => openEdit('netSalary', profile.netSalary)}
+          onClick={() => setSalaryOpen(true)}
         />
+        {profile.nextSalary != null && profile.nextSalaryFrom && (
+          <div className="flex items-center justify-between text-xs bg-primary/5 text-primary rounded-lg px-3 py-2 -mt-1 mb-1">
+            <span>→ {fmt(profile.nextSalary)} à partir de {formatMonthFr(profile.nextSalaryFrom)}</span>
+            <button
+              className="text-slate-400 hover:text-danger"
+              onClick={async () => {
+                await api.delete('/api/profile/salary/pending');
+                dispatch({ type: 'SET_PROFILE', payload: { nextSalary: null, nextSalaryFrom: null } });
+              }}
+            >Annuler</button>
+          </div>
+        )}
         <Row label="Région" value={profile.region} onClick={() => openEdit('region', profile.region)} />
         <Row
           label="Supermarché habituel"
@@ -258,6 +565,24 @@ export default function Settings() {
           value={profile.hasCar}
           onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { hasCar: v } })}
         />
+        <div className="flex items-center justify-between gap-3 py-3 border-b border-slate-50">
+          <span className="text-sm text-slate-700 font-medium">🌓 Thème</span>
+          <div className="flex bg-slate-100 rounded-lg p-0.5 gap-0.5">
+            {[{ id: 'auto', label: 'Auto' }, { id: 'light', label: 'Clair' }, { id: 'dark', label: 'Sombre' }].map(t => (
+              <button
+                key={t.id}
+                onClick={() => dispatch({ type: 'UPDATE_PROFILE', payload: { theme: t.id } })}
+                className={`px-3 py-1 rounded-md text-xs font-semibold ${(profile.theme || 'auto') === t.id ? 'bg-white text-primary shadow-sm' : 'text-slate-500'}`}
+              >{t.label}</button>
+            ))}
+          </div>
+        </div>
+        <Toggle
+          label="💶 Arrondir les retraits à la dizaine"
+          sub="Pas de billets de 5 € au distributeur : 17 € → 20 €. Sinon, montants exacts à l'euro près."
+          value={profile.roundWithdrawals !== false}
+          onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { roundWithdrawals: v } })}
+        />
         <Toggle
           label="🚬 Je fume"
           sub="Profil tabac, enveloppe et alerte dédiées"
@@ -268,13 +593,16 @@ export default function Settings() {
       </div>
 
       <div className="space-y-4">
-      {profile.isSmoker && <TobaccoCard key={profile.tobaccoType} profile={profile} envelopes={envelopes} dispatch={dispatch} />}
+      {profile.isSmoker && <TobaccoCard profile={profile} envelopes={envelopes} dispatch={dispatch} />}
+
+      <IdealSplitCard profile={profile} dispatch={dispatch} />
 
       <AlertsCard profile={profile} dispatch={dispatch} />
 
       {/* Données */}
       <div className="card">
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Données</p>
+        <ExportButtons />
         <button
           onClick={() => setResetModal(true)}
           className="btn-danger w-full flex items-center justify-center gap-2 mb-2"
@@ -342,29 +670,10 @@ export default function Settings() {
         </Modal>
       )}
 
+      {salaryOpen && <SalaryModal profile={profile} dispatch={dispatch} onClose={() => setSalaryOpen(false)} />}
+
       {/* Reset confirmation */}
-      {resetModal && (
-        <Modal
-          title="⚠️ Réinitialiser les données ?"
-          onClose={() => setResetModal(false)}
-          footer={
-            <>
-              <button className="btn-secondary" onClick={() => setResetModal(false)}>Annuler</button>
-              <button
-                className="btn-danger"
-                onClick={() => { dispatch({ type: 'RESET' }); setResetModal(false); }}
-              >
-                Oui, tout supprimer
-              </button>
-            </>
-          }
-        >
-          <p className="text-sm text-slate-600">
-            Cette action supprimera définitivement toutes tes données : profil, charges, enveloppes et historique de dépenses.
-          </p>
-          <p className="text-sm font-semibold text-danger mt-2">Cette action est irréversible.</p>
-        </Modal>
-      )}
+      {resetModal && <ResetModal onClose={() => setResetModal(false)} onDone={() => { setResetModal(false); dispatch({ type: 'RESET' }); }} />}
     </div>
   );
 }

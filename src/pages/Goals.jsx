@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, PlusCircle } from 'lucide-react';
 import { api } from '../api/client';
-import { fmt } from '../utils/budget';
+import { fmt, goalPlan, totalSavingEnvelopesBudget, totalProgrammedSavings, computedSavings } from '../utils/budget';
+import { useBudget } from '../context/BudgetContext';
+import { MONTHS_FR } from '../data/defaults';
 import Modal from '../components/Modal';
 
 const ICONS = ['🎯', '🏖️', '🚗', '🏠', '💍', '✈️', '📱', '🎓', '🛡️', '💰', '🏋️', '🎸'];
-const BLANK = { name: '', targetAmount: '', currentAmount: '0', targetDate: '', icon: '🎯' };
+const BLANK = { name: '', targetAmount: '', currentAmount: '0', targetDate: '', icon: '🎯', monthlyContribution: '' };
+
+const monthLabel = m => `${MONTHS_FR[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`;
 
 function GoalCard({ goal, onEdit, onDelete, onDeposit }) {
   const pct = goal.targetAmount > 0
@@ -70,11 +74,30 @@ function GoalCard({ goal, onEdit, onDelete, onDeposit }) {
         </div>
       </div>
 
-      {monthlyNeeded && !done && (
-        <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
-          💡 Mettre de côté <strong>{fmt(Math.ceil(monthlyNeeded))}/mois</strong> pour atteindre l'objectif à temps
-        </p>
-      )}
+      {!done && (() => {
+        const plan = goalPlan(goal);
+        if (plan.late) {
+          return (
+            <p className="text-xs text-warn bg-warn/10 rounded-lg px-3 py-2">
+              ⚠️ En retard : {plan.contribution > 0
+                ? <>il manque <strong>{fmt(Math.ceil(plan.shortfall))}/mois</strong> (prévu {fmt(plan.contribution)}, nécessaire {fmt(Math.ceil(plan.needed))})</>
+                : <>échéance atteinte, il reste {fmt(plan.remaining)}</>}
+            </p>
+          );
+        }
+        if (plan.contribution > 0) {
+          return (
+            <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+              📅 {fmt(plan.contribution)}/mois prévus → objectif atteint en <strong>{monthLabel(plan.reachMonth)}</strong>
+            </p>
+          );
+        }
+        return monthlyNeeded ? (
+          <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+            💡 Mettre de côté <strong>{fmt(Math.ceil(monthlyNeeded))}/mois</strong> pour atteindre l'objectif à temps
+          </p>
+        ) : null;
+      })()}
 
       {!done && (
         <button
@@ -119,6 +142,7 @@ export default function Goals() {
       currentAmount: String(goal.currentAmount),
       targetDate: goal.targetDate || '',
       icon: goal.icon,
+      monthlyContribution: goal.monthlyContribution != null ? String(goal.monthlyContribution) : '',
     });
     setSelectedGoal(goal);
     setModal('edit');
@@ -138,6 +162,7 @@ export default function Goals() {
       currentAmount: Number(form.currentAmount) || 0,
       targetDate: form.targetDate || null,
       icon: form.icon,
+      monthlyContribution: form.monthlyContribution ? Number(form.monthlyContribution) : null,
     };
     try {
       if (modal === 'add') {
@@ -159,12 +184,18 @@ export default function Goals() {
   async function doDeposit() {
     if (!depositAmount || Number(depositAmount) <= 0) return;
     try {
-      const goal = await api.post(`/api/goals/${selectedGoal.id}/deposit`, { amount: Number(depositAmount) });
+      const goal = await api.patch(`/api/goals/${selectedGoal.id}/deposit`, { amount: Number(depositAmount) });
       setGoals(g => g.map(x => x.id === goal.id ? goal : x));
       setModal(null);
     } catch {}
   }
 
+  const { state } = useBudget();
+  const savingCapacity = totalSavingEnvelopesBudget(state.envelopes) + totalProgrammedSavings(state.fixedCharges)
+    + Math.max(0, computedSavings(state.profile.netSalary, state.fixedCharges, state.envelopes));
+  const activeGoals = goals.filter(g => g.currentAmount < g.targetAmount);
+  const plannedTotal = activeGoals.reduce((s, g) => s + (Number(g.monthlyContribution) || 0), 0);
+  const neededTotal = activeGoals.reduce((s, g) => s + (goalPlan(g).needed || 0), 0);
   const totalTarget = goals.reduce((s, g) => s + g.targetAmount, 0);
   const totalCurrent = goals.reduce((s, g) => s + g.currentAmount, 0);
 
@@ -183,6 +214,31 @@ export default function Goals() {
       </div>
 
       {loading && <p className="text-sm text-slate-400 text-center py-8">Chargement…</p>}
+
+      {!loading && activeGoals.length > 0 && (plannedTotal > 0 || neededTotal > 0) && (
+        <div className="card">
+          <p className="text-sm font-semibold text-slate-700 mb-2">Tes objectifs et ton budget</p>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-slate-50 py-2">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">Prévu</p>
+              <p className="text-sm font-bold text-slate-700">{fmt(plannedTotal)}/mois</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 py-2">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">Nécessaire</p>
+              <p className="text-sm font-bold text-slate-700">{fmt(Math.ceil(neededTotal))}/mois</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 py-2">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">Épargne du budget</p>
+              <p className="text-sm font-bold text-slate-700">{fmt(savingCapacity)}/mois</p>
+            </div>
+          </div>
+          <p className={`text-xs mt-2 ${Math.max(plannedTotal, neededTotal) > savingCapacity ? 'text-warn' : 'text-savings'}`}>
+            {Math.max(plannedTotal, neededTotal) > savingCapacity
+              ? `⚠️ Tes objectifs demandent plus que l'épargne prévue par ton budget (${fmt(Math.max(plannedTotal, neededTotal) - savingCapacity)}/mois de plus).`
+              : '✓ Ton budget permet de financer tes objectifs.'}
+          </p>
+        </div>
+      )}
 
       {!loading && goals.length === 0 && (
         <div className="text-center py-14 text-slate-400">
@@ -253,6 +309,15 @@ export default function Goals() {
             <label className="label">Date cible (optionnel)</label>
             <input className="input" type="date"
               value={form.targetDate} onChange={e => setForm(f => ({ ...f, targetDate: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label">Versement mensuel prévu (optionnel)</label>
+            <input className="input" type="number" min="0" placeholder="Ex. 100"
+              value={form.monthlyContribution} onChange={e => setForm(f => ({ ...f, monthlyContribution: e.target.value }))} />
+            {form.targetAmount && form.targetDate && (() => {
+              const p = goalPlan({ targetAmount: Number(form.targetAmount), currentAmount: Number(form.currentAmount) || 0, targetDate: form.targetDate, monthlyContribution: Number(form.monthlyContribution) || 0 });
+              return p.needed != null ? <p className="text-xs text-slate-400 mt-1">Pour tenir la date : {fmt(Math.ceil(p.needed))}/mois</p> : null;
+            })()}
           </div>
         </Modal>
       )}

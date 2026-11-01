@@ -4,10 +4,13 @@ import {
   fmt, totalFixedExSavings, totalProgrammedSavings,
   totalExpenseEnvelopes, totalSavingEnvelopesBudget,
   computedSavings, totalSavings, budgetHealth, HEALTH_CONFIG, donutData, weeklyAmount,
-  realSpending, envelopeForecast, periodDaysFor,
+  realSpending, envelopeForecast, periodDaysFor, idealSplit, pctLabel, carryoverFor, monthEndForecast, fmtDec, tobaccoStats,
 } from '../utils/budget';
-import { periodStart, monthKey, previousMonthKey, isLastDayOfMonth, daysInMonth } from '../utils/period';
-import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard } from 'lucide-react';
+import { periodStart, monthKey, previousMonthKey, isLastDayOfMonth, daysInMonth, addDays, toLocalDate, formatDay } from '../utils/period';
+import { useEffect, useState } from 'react';
+import { api } from '../api/client';
+import { getTobaccoType } from '../data/defaults';
+import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard, Landmark, Pencil } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const MONTH_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -40,6 +43,179 @@ function MonthCloseBanner({ savingsHistory, navigate }) {
   );
 }
 
+const SALARY_RE = /SALAIRE|\bPAIE\b|REMUNERATION|\bSAL\b/i;
+const DISMISS_KEY = 'messous_salary_dismissed';
+
+function readDismissed() {
+  try { return localStorage.getItem(DISMISS_KEY); } catch { return null; }
+}
+
+// Virement de salaire repéré sur le relevé (40 derniers jours) différent du salaire du profil
+function SalaryDetectedBanner({ state, dispatch }) {
+  const [dismissed, setDismissed] = useState(readDismissed);
+  const since = addDays(toLocalDate(), -40);
+  const credit = state.bankTransactions
+    .filter(b => b.amount > 0 && b.date >= since && SALARY_RE.test(b.label || ''))
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (!credit || credit.id === dismissed || Math.abs(credit.amount - state.profile.netSalary) < 1) return null;
+
+  function dismiss() {
+    try { localStorage.setItem(DISMISS_KEY, credit.id); } catch { /* stockage indisponible */ }
+    setDismissed(credit.id);
+  }
+
+  async function apply() {
+    const updated = await api.put('/api/profile/salary', { amount: credit.amount, from: monthKey() });
+    dispatch({ type: 'SET_PROFILE', payload: updated });
+    dismiss();
+  }
+
+  return (
+    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex flex-wrap items-center gap-3">
+      <span className="text-xl">💼</span>
+      <div className="flex-1 min-w-[200px]">
+        <p className="text-sm font-semibold text-slate-700">Salaire reçu le {formatDay(credit.date)} : {fmt(credit.amount)}</p>
+        <p className="text-xs text-slate-500">Ton profil indique {fmt(state.profile.netSalary)}. Mettre à jour pour ce mois-ci ?</p>
+      </div>
+      <div className="flex gap-2">
+        <button className="btn-secondary text-xs py-1.5" onClick={dismiss}>Ignorer</button>
+        <button className="btn-primary text-xs py-1.5" onClick={apply}>Mettre à jour</button>
+      </div>
+    </div>
+  );
+}
+
+// Solde prévisionnel de fin de mois + calendrier des prélèvements à venir.
+// Solde : comptes bancaires connectés, sinon solde saisi à la main.
+function ForecastCard({ state, dispatch }) {
+  const [accounts, setAccounts] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    api.get('/api/bank/status').then(s => setAccounts(s.accounts || [])).catch(() => setAccounts([]));
+  }, []);
+
+  const withBalance = (accounts || []).filter(a => a.balance != null);
+  const bankBalance = withBalance.length ? withBalance.reduce((s, a) => s + a.balance, 0) : null;
+  const balance = bankBalance ?? state.profile.manualBalance ?? null;
+  const f = monthEndForecast({
+    balance,
+    charges: state.fixedCharges,
+    envelopes: state.envelopes,
+    transactions: state.transactions,
+    carryovers: state.carryovers,
+    withdrawals: state.withdrawals,
+  });
+  const now = new Date();
+  const lastDay = daysInMonth(now);
+
+  async function saveBalance() {
+    const updated = await api.put('/api/profile/balance', { balance: draft === '' ? null : Number(draft) });
+    dispatch({ type: 'SET_PROFILE', payload: updated });
+    setEditing(false);
+  }
+
+  if (accounts === null) return null;
+
+  return (
+    <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Fin de mois prévue</p>
+          {f.forecast != null ? (
+            <p className={cn('text-3xl font-bold mt-1', f.forecast < 0 ? 'text-danger' : 'text-slate-800')}>{fmt(f.forecast)}</p>
+          ) : (
+            <p className="text-sm text-slate-500 mt-1">Indique ton solde pour voir la prévision</p>
+          )}
+          <p className="text-xs text-slate-400">le {lastDay} {MONTH_LONG[now.getMonth()]}, hors salaire et revenus à venir</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-slate-400 flex items-center gap-1 justify-end"><Landmark size={12} /> Solde {bankBalance != null ? 'banque' : 'saisi'}</p>
+          {editing ? (
+            <div className="flex gap-1 mt-1">
+              <input className="input py-1 w-28 text-sm" type="number" value={draft} onChange={e => setDraft(e.target.value)} autoFocus />
+              <button className="btn-primary text-xs px-2 py-1" onClick={saveBalance}>OK</button>
+            </div>
+          ) : (
+            <button
+              className="text-lg font-bold text-slate-700 flex items-center gap-1 ml-auto disabled:cursor-default"
+              disabled={bankBalance != null}
+              onClick={() => { setDraft(balance ?? ''); setEditing(true); }}
+            >
+              {balance != null ? fmtDec(balance) : 'Saisir'}
+              {bankBalance == null && <Pencil size={12} className="text-slate-400" />}
+            </button>
+          )}
+        </div>
+      </div>
+      {f.forecast != null && (
+        <div className="grid grid-cols-3 gap-2 text-center mb-3">
+          {[
+            { label: 'Prélèvements', value: f.chargesLeft },
+            { label: 'Enveloppes', value: f.envelopesLeft },
+            { label: 'Épargne à verser', value: f.savingsLeft },
+          ].map(x => (
+            <div key={x.label} className="rounded-xl bg-slate-50 py-2">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">{x.label}</p>
+              <p className="text-sm font-bold text-slate-700">−{fmt(x.value)}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {f.upcoming.length > 0 ? (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 mb-1.5">Prélèvements à venir</p>
+          <div className="space-y-1">
+            {f.upcoming.map(c => (
+              <div key={c.id} className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-semibold text-slate-400 w-12 flex-shrink-0">{c.dueDay ? `le ${c.dueDay}` : 'ce mois'}</span>
+                  <span className="text-slate-600 truncate">{c.name}</span>
+                </span>
+                <span className="font-semibold text-slate-700 flex-shrink-0">{fmt(c.amount)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-savings">✓ Toutes les charges fixes du mois sont passées</p>
+      )}
+    </div>
+  );
+}
+
+// Tabac : achats du mois, ou compteur d'arrêt
+function TobaccoTile({ state, navigate }) {
+  const { profile } = state;
+  if (!profile.isSmoker && !profile.tobaccoQuitDate) return null;
+  const s = tobaccoStats({ profile, envelopes: state.envelopes, transactions: state.transactions });
+  const unit = getTobaccoType(profile.tobaccoType);
+  if (s.quit) {
+    return (
+      <button onClick={() => navigate('settings')} className="w-full text-left rounded-2xl border border-savings/30 bg-savings/5 p-4 flex items-center gap-3">
+        <span className="text-2xl">🚭</span>
+        <div>
+          <p className="text-sm font-semibold text-slate-700">{s.quit.days} jour{s.quit.days > 1 ? 's' : ''} sans tabac</p>
+          <p className="text-xs text-slate-500">{fmt(s.quit.saved)} économisés · {s.quit.unitsAvoided} {s.quit.unitsAvoided > 1 ? unit.unitPlural : unit.unit} évité{s.quit.unitsAvoided > 1 ? 's' : ''}</p>
+        </div>
+      </button>
+    );
+  }
+  if (!s.spentMonth) return null;
+  const units = Math.round(s.unitsMonth * 10) / 10;
+  const expected = Math.round(s.expectedSoFar * 10) / 10;
+  return (
+    <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-4 flex items-center gap-3">
+      <span className="text-2xl">{unit.icon}</span>
+      <div className="flex-1">
+        <p className="text-sm font-semibold text-slate-700">≈ {units} {units > 1 ? unit.unitPlural : unit.unit} ce mois-ci</p>
+        <p className="text-xs text-slate-400">{fmt(s.spentMonth)} · rythme prévu à date : {expected}</p>
+      </div>
+    </div>
+  );
+}
+
 // Dépenses réelles du mois, en temps réel (enveloppes + carte non classée).
 // Le mois est en cours : la prévision reste indicative, seul un dépassement réel est signalé en rouge.
 function LiveMonthCard({ state, navigate }) {
@@ -47,7 +223,8 @@ function LiveMonthCard({ state, navigate }) {
   const now = new Date();
   const since = periodStart('monthly');
   const live = realSpending({ transactions, envelopes, bankTransactions, since });
-  const budget = totalExpenseEnvelopes(envelopes);
+  const budget = totalExpenseEnvelopes(envelopes)
+    + envelopes.filter(e => e.type !== 'saving').reduce((s, e) => s + carryoverFor(state.carryovers, e.id), 0);
   const forecast = envelopeForecast({ budget, spent: live.total, since, periodDays: periodDaysFor('monthly') });
   const pct = budget > 0 ? Math.min(100, (live.total / budget) * 100) : 0;
   const dayPct = (now.getDate() / daysInMonth(now)) * 100;
@@ -167,6 +344,7 @@ export default function Dashboard({ navigate }) {
       </div>
 
       <MonthCloseBanner savingsHistory={state.savingsHistory} navigate={navigate} />
+      <SalaryDetectedBanner state={state} dispatch={dispatch} />
 
       {/* Desktop: 2 colonnes / Mobile: 1 colonne */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
@@ -174,6 +352,8 @@ export default function Dashboard({ navigate }) {
         {/* Colonne gauche */}
         <div className="lg:col-span-2 space-y-4">
           <LiveMonthCard state={state} navigate={navigate} />
+          <ForecastCard state={state} dispatch={dispatch} />
+          <TobaccoTile state={state} navigate={navigate} />
 
           {/* Hero card salaire */}
           <div className="rounded-2xl bg-gradient-to-br from-primary to-primary-dark text-white p-6 shadow-lg">
@@ -321,10 +501,11 @@ export default function Dashboard({ navigate }) {
             const actualNeeds = envelopes.filter(e => e.type === 'need').reduce((s, e) => s + (Number(e.budgetMonthly) || 0), 0);
             const actualWants = envelopes.filter(e => e.type === 'want').reduce((s, e) => s + (Number(e.budgetMonthly) || 0), 0);
             const actualSavAlloc = savingEnv + Math.max(0, remainder);
+            const split = idealSplit(profile);
             const rows = [
-              { label: 'Besoins', pct: 0.5, actual: actualNeeds, color: '#3b82f6', type: 'need', icon: '🧾', tip: '50%' },
-              { label: 'Épargne', pct: 0.2, actual: actualSavAlloc, color: '#10b981', type: 'saving', icon: '🏦', tip: '20%' },
-              { label: 'Plaisirs', pct: 0.3, actual: actualWants, color: '#8b5cf6', type: 'want', icon: '🎉', tip: '30%' },
+              { label: 'Besoins', pct: split.needs, actual: actualNeeds, color: '#3b82f6', type: 'need', icon: '🧾', tip: pctLabel(split.needs) },
+              { label: 'Épargne', pct: split.savings, actual: actualSavAlloc, color: '#10b981', type: 'saving', icon: '🏦', tip: pctLabel(split.savings) },
+              { label: 'Plaisirs', pct: split.wants, actual: actualWants, color: '#8b5cf6', type: 'want', icon: '🎉', tip: pctLabel(split.wants) },
             ];
             return (
               <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
