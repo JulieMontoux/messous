@@ -101,8 +101,8 @@ export function installFakeApi(overrides = {}) {
   on('DELETE', /^\/api\/advances\/([^/]+)$/, (b, [, id]) => { db.advances = db.advances.filter(a => a.id !== id); return { ok: true }; });
 
   // Banque
-  on('GET', /^\/api\/bank\/status$/, () => db.bankStatus);
-  on('GET', /^\/api\/bank\/transactions/, () => db.bankTransactions);
+  on('GET', /^\/api\/bank\/status$/, () => (db.statusError ? [500, { error: db.statusError }] : db.bankStatus));
+  on('GET', /^\/api\/bank\/transactions/, () => (db.opsError ? [500, { error: db.opsError }] : db.bankTransactions));
   on('GET', /^\/api\/bank\/banks$/, () => (db.banksError ? [502, { error: db.banksError }] : db.banks));
   on('POST', /^\/api\/bank\/connect$/, () => (db.connectError ? [502, { error: db.connectError }] : { url: 'about:blank#banque' }));
   on('POST', /^\/api\/bank\/sync$/, () => (db.syncError ? [502, { error: db.syncError }] : { inserted: 2, assigned: 1, withdrawals: 1 }));
