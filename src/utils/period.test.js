@@ -176,3 +176,16 @@ describe('retraits DAB détectés sur le relevé', () => {
     expect(r.total).toBe(0);
   });
 });
+
+describe('budget idéal et reports', async () => {
+  const { idealSplit, carryoverFor } = await import('./budget');
+  it('répartition par défaut et personnalisée', () => {
+    expect(idealSplit({})).toEqual({ needs: 0.5, wants: 0.3, savings: 0.2 });
+    expect(idealSplit({ idealNeedsPct: 60, idealWantsPct: 20, idealSavingsPct: 20 })).toEqual({ needs: 0.6, wants: 0.2, savings: 0.2 });
+  });
+  it('report d\'une enveloppe pour un mois', () => {
+    const c = [{ envelopeId: 'a', month: '2026-11', amount: 35 }, { envelopeId: 'a', month: '2026-12', amount: 10 }];
+    expect(carryoverFor(c, 'a', '2026-11')).toBe(35);
+    expect(carryoverFor(c, 'b', '2026-11')).toBe(0);
+  });
+});

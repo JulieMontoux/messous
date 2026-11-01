@@ -57,6 +57,11 @@ export const DEFAULT_PROFILE = {
   alertEmail: '',
   monthEndEmail: true,
   roundWithdrawals: true,
+  idealNeedsPct: 50,
+  idealWantsPct: 30,
+  idealSavingsPct: 20,
+  nextSalary: null,
+  nextSalaryFrom: null,
   accountEmail: '',
   mailConfigured: false,
 };
@@ -67,7 +72,7 @@ export async function fetchBankTransactions() {
 }
 
 export async function fetchAll() {
-  const [profile, settings, fixedCharges, envelopes, transactions, savingsHistory, withdrawals, bankTransactions] = await Promise.all([
+  const [profile, settings, fixedCharges, envelopes, transactions, savingsHistory, withdrawals, bankTransactions, carryovers] = await Promise.all([
     api.get('/api/profile'),
     api.get('/api/settings'),
     api.get('/api/charges'),
@@ -76,6 +81,7 @@ export async function fetchAll() {
     api.get('/api/savings'),
     api.get('/api/withdrawals').catch(() => []),
     fetchBankTransactions(),
+    api.get('/api/envelopes/carryovers').catch(() => []),
   ]);
   return {
     profile: {
@@ -90,5 +96,6 @@ export async function fetchAll() {
     savingsHistory,
     withdrawals,
     bankTransactions,
+    carryovers,
   };
 }

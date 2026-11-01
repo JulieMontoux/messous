@@ -9,6 +9,7 @@ const defaultState = {
   savingsHistory: [],
   withdrawals: [],
   bankTransactions: [],
+  carryovers: [],
   settings: { viewMode: 'monthly' },
 };
 
@@ -33,10 +34,20 @@ function reducer(state, action) {
       const snap = action.payload;
       const prev = state.savingsHistory.find(s => s.month === snap.month);
       const existing = state.savingsHistory.filter(s => s.month !== snap.month);
+      const { carryovers: carry, ...snapData } = snap;
       const merged = action.type === 'CLOSE_MONTH'
-        ? { ...prev, ...snap, month: snap.month, closedAt: new Date().toISOString() }
-        : { ...prev, ...snap };
-      return { ...state, savingsHistory: [...existing, merged].sort((a, b) => a.month.localeCompare(b.month)) };
+        ? { ...prev, ...snapData, month: snap.month, closedAt: new Date().toISOString() }
+        : { ...prev, ...snapData };
+      let carryovers = state.carryovers;
+      if (action.type === 'CLOSE_MONTH' && Array.isArray(carry)) {
+        const [y, m] = snap.month.split('-').map(Number);
+        const next = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}`;
+        carryovers = [
+          ...carryovers.filter(c => c.month !== next),
+          ...carry.filter(c => c.amount > 0).map(c => ({ envelopeId: c.envelopeId, month: next, amount: c.amount })),
+        ];
+      }
+      return { ...state, carryovers, savingsHistory: [...existing, merged].sort((a, b) => a.month.localeCompare(b.month)) };
     }
 
     case 'ADD_WITHDRAWAL':
@@ -48,6 +59,9 @@ function reducer(state, action) {
     // Actions locales (la synchronisation est faite par l'appelant)
     case 'SET_BANK_TRANSACTIONS':
       return { ...state, bankTransactions: action.payload };
+
+    case 'SET_PROFILE':
+      return { ...state, profile: { ...state.profile, ...action.payload } };
 
     case 'SET_WITHDRAWALS':
       return { ...state, withdrawals: action.payload };

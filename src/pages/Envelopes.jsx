@@ -4,7 +4,7 @@ import { useBudget } from '../context/BudgetContext';
 import { ENVELOPE_CATEGORIES, COLOR_MAP, generateId } from '../data/defaults';
 import {
   fmt, fmtDec, spentInPeriod, weeklyAmount, totalFixedExSavings, totalProgrammedSavings,
-  transactionsInPeriod, envelopeForecast, periodDaysFor,
+  transactionsInPeriod, envelopeForecast, periodDaysFor, idealSplit, pctLabel, carryoverFor,
 } from '../utils/budget';
 import { periodStart, periodEnd, lastWithdrawal, toLocalDate, monthKey, formatDay, isCutByClosure } from '../utils/period';
 import { computeWithdrawal, roundUpTo } from '../utils/withdrawal';
@@ -30,7 +30,7 @@ function PeriodNote({ mode, since, until, anchor, cut }) {
   );
 }
 
-function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory, roundToTen, viewMode, idealNeeds, idealWants, idealSavings, tobaccoEnv, onSave, onClose }) {
+function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory, roundToTen, split, viewMode, idealNeeds, idealWants, idealSavings, tobaccoEnv, onSave, onClose }) {
   const [mode, setMode] = useState(viewMode);
   const [calcMode, setCalcMode] = useState('ideal');
   const [record, setRecord] = useState({ date: toLocalDate(), amount: '', note: '' });
@@ -58,7 +58,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
   const savingsIdealBudget = idealResult.savingsBudget;
   const savingsIdealToWithdraw = idealResult.savingsToWithdraw;
 
-  // Budget idéal : un montant global par groupe (besoins 50 %, plaisirs 30 % − tabac, épargne 20 %),
+  // Budget idéal : un montant global par groupe (répartition du profil, 50/30/20 par défaut),
   // seul le tabac reste basé sur son enveloppe. Mode enveloppes : une ligne par enveloppe.
   const needsSpent = needsData.reduce((s, e) => s + e.spent, 0);
   const needsTotal = isIdeal ? idealResult.needsToWithdraw : envResult.needsTotal;
@@ -127,7 +127,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
       {(isIdeal ? idealResult.needsBudget > 0 : needsData.length > 0) && (
         <div className="mb-3">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
-            🧾 Besoins {isIdeal && <span className="normal-case font-normal">(idéal 50 % du disponible)</span>}
+            🧾 Besoins {isIdeal && <span className="normal-case font-normal">(idéal {pctLabel(split.needs)} du disponible)</span>}
           </p>
           {isIdeal ? (
             <div className="flex items-center justify-between">
@@ -189,7 +189,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
       {(isIdeal ? true : wantData.length > 0) && (
         <div className="mb-3">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
-            🎉 Plaisirs {isIdeal && <span className="normal-case font-normal">(idéal 30% − tabac)</span>}
+            🎉 Plaisirs {isIdeal && <span className="normal-case font-normal">(idéal {pctLabel(split.wants)} − tabac)</span>}
           </p>
           {isIdeal ? (
             <div className="flex items-center justify-between">
@@ -231,7 +231,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
       {(isIdeal ? savingsIdealBudget > 0 : savingData.length > 0) && (
         <div className="mb-3">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
-            🏦 Épargne {isIdeal && <span className="normal-case font-normal">(20% du disponible)</span>}
+            🏦 Épargne {isIdeal && <span className="normal-case font-normal">({pctLabel(split.savings)} du disponible)</span>}
           </p>
           {isIdeal ? (
             <div className="flex items-center justify-between">
@@ -319,11 +319,12 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
 const BLANK_ENV = { name: '', categoryId: 'groceries', icon: '🛒', colorKey: 'needs', type: 'need', budgetMonthly: '' };
 const blankTx = () => ({ amount: '', note: '', date: toLocalDate(), paymentMethod: 'cash', recurring: false, dayOfMonth: new Date().getDate() });
 
-function EnvelopeCard({ env, transactions, viewMode, since, onEdit, onDelete, onAddTx, onDeleteTx }) {
+function EnvelopeCard({ env, transactions, viewMode, since, carry = 0, onEdit, onDelete, onAddTx, onDeleteTx }) {
   const [open, setOpen] = useState(false);
   const colors = COLOR_MAP[env.colorKey] || COLOR_MAP.needs;
   const isSaving = env.type === 'saving';
-  const budget = viewMode === 'weekly' ? weeklyAmount(env.budgetMonthly) : env.budgetMonthly;
+  // Le reste reporté du mois précédent s'ajoute au budget du mois (vue mensuelle)
+  const budget = viewMode === 'weekly' ? weeklyAmount(env.budgetMonthly) : env.budgetMonthly + carry;
   const spent = spentInPeriod(transactions, env.id, viewMode, { since });
   const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
   const remaining = budget - spent;
@@ -348,7 +349,10 @@ function EnvelopeCard({ env, transactions, viewMode, since, onEdit, onDelete, on
             </div>
           </div>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-slate-400">{fmt(spent)} {isSaving ? 'versés' : ''} / {fmt(budget)}</span>
+            <span className="text-xs text-slate-400">
+              {fmt(spent)} {isSaving ? 'versés' : ''} / {fmt(budget)}
+              {carry > 0 && viewMode !== 'weekly' && <span className="text-savings"> (dont {fmt(carry)} reporté)</span>}
+            </span>
             <span className="text-xs font-medium px-1.5 py-0.5 rounded-full" style={{ background: colors.bg, color: colors.text }}>
               {isSaving ? 'Épargne' : env.type === 'need' ? 'Besoin' : 'Envie'}
             </span>
@@ -471,9 +475,10 @@ export default function Envelopes() {
   const anchor = viewMode === 'weekly' ? lastWithdrawal(withdrawals) : null;
 
   const afterFixed = Math.max(0, profile.netSalary - totalFixedExSavings(fixedCharges) - totalProgrammedSavings(fixedCharges));
-  const idealNeeds = afterFixed * 0.5;
-  const idealWants = afterFixed * 0.3;
-  const idealSavings = afterFixed * 0.2;
+  const split = idealSplit(profile);
+  const idealNeeds = afterFixed * split.needs;
+  const idealWants = afterFixed * split.wants;
+  const idealSavings = afterFixed * split.savings;
   const tobaccoEnv = envelopes.find(e => e.categoryId === 'tobacco');
 
   const [envModal, setEnvModal] = useState(null);
@@ -616,6 +621,7 @@ export default function Envelopes() {
                       transactions={transactions}
                       viewMode={viewMode}
                       since={since}
+                      carry={carryoverFor(state.carryovers, env.id)}
                       onEdit={() => openEditEnv(env)}
                       onDelete={() => {
                         if (window.confirm(`Supprimer l'enveloppe « ${env.name} » et ses dépenses ?`)) dispatch({ type: 'DELETE_ENVELOPE', payload: env.id });
@@ -777,6 +783,7 @@ export default function Envelopes() {
           withdrawals={withdrawals}
           savingsHistory={savingsHistory}
           roundToTen={profile.roundWithdrawals !== false}
+          split={split}
           viewMode={viewMode}
           idealNeeds={idealNeeds}
           idealWants={idealWants}

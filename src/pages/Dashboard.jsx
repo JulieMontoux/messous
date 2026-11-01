@@ -4,9 +4,11 @@ import {
   fmt, totalFixedExSavings, totalProgrammedSavings,
   totalExpenseEnvelopes, totalSavingEnvelopesBudget,
   computedSavings, totalSavings, budgetHealth, HEALTH_CONFIG, donutData, weeklyAmount,
-  realSpending, envelopeForecast, periodDaysFor,
+  realSpending, envelopeForecast, periodDaysFor, idealSplit, pctLabel, carryoverFor,
 } from '../utils/budget';
-import { periodStart, monthKey, previousMonthKey, isLastDayOfMonth, daysInMonth } from '../utils/period';
+import { periodStart, monthKey, previousMonthKey, isLastDayOfMonth, daysInMonth, addDays, toLocalDate, formatDay } from '../utils/period';
+import { useState } from 'react';
+import { api } from '../api/client';
 import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -40,6 +42,48 @@ function MonthCloseBanner({ savingsHistory, navigate }) {
   );
 }
 
+const SALARY_RE = /SALAIRE|\bPAIE\b|REMUNERATION|\bSAL\b/i;
+const DISMISS_KEY = 'messous_salary_dismissed';
+
+function readDismissed() {
+  try { return localStorage.getItem(DISMISS_KEY); } catch { return null; }
+}
+
+// Virement de salaire repéré sur le relevé (40 derniers jours) différent du salaire du profil
+function SalaryDetectedBanner({ state, dispatch }) {
+  const [dismissed, setDismissed] = useState(readDismissed);
+  const since = addDays(toLocalDate(), -40);
+  const credit = state.bankTransactions
+    .filter(b => b.amount > 0 && b.date >= since && SALARY_RE.test(b.label || ''))
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (!credit || credit.id === dismissed || Math.abs(credit.amount - state.profile.netSalary) < 1) return null;
+
+  function dismiss() {
+    try { localStorage.setItem(DISMISS_KEY, credit.id); } catch { /* stockage indisponible */ }
+    setDismissed(credit.id);
+  }
+
+  async function apply() {
+    const updated = await api.put('/api/profile/salary', { amount: credit.amount, from: monthKey() });
+    dispatch({ type: 'SET_PROFILE', payload: updated });
+    dismiss();
+  }
+
+  return (
+    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex flex-wrap items-center gap-3">
+      <span className="text-xl">💼</span>
+      <div className="flex-1 min-w-[200px]">
+        <p className="text-sm font-semibold text-slate-700">Salaire reçu le {formatDay(credit.date)} : {fmt(credit.amount)}</p>
+        <p className="text-xs text-slate-500">Ton profil indique {fmt(state.profile.netSalary)}. Mettre à jour pour ce mois-ci ?</p>
+      </div>
+      <div className="flex gap-2">
+        <button className="btn-secondary text-xs py-1.5" onClick={dismiss}>Ignorer</button>
+        <button className="btn-primary text-xs py-1.5" onClick={apply}>Mettre à jour</button>
+      </div>
+    </div>
+  );
+}
+
 // Dépenses réelles du mois, en temps réel (enveloppes + carte non classée).
 // Le mois est en cours : la prévision reste indicative, seul un dépassement réel est signalé en rouge.
 function LiveMonthCard({ state, navigate }) {
@@ -47,7 +91,8 @@ function LiveMonthCard({ state, navigate }) {
   const now = new Date();
   const since = periodStart('monthly');
   const live = realSpending({ transactions, envelopes, bankTransactions, since });
-  const budget = totalExpenseEnvelopes(envelopes);
+  const budget = totalExpenseEnvelopes(envelopes)
+    + envelopes.filter(e => e.type !== 'saving').reduce((s, e) => s + carryoverFor(state.carryovers, e.id), 0);
   const forecast = envelopeForecast({ budget, spent: live.total, since, periodDays: periodDaysFor('monthly') });
   const pct = budget > 0 ? Math.min(100, (live.total / budget) * 100) : 0;
   const dayPct = (now.getDate() / daysInMonth(now)) * 100;
@@ -167,6 +212,7 @@ export default function Dashboard({ navigate }) {
       </div>
 
       <MonthCloseBanner savingsHistory={state.savingsHistory} navigate={navigate} />
+      <SalaryDetectedBanner state={state} dispatch={dispatch} />
 
       {/* Desktop: 2 colonnes / Mobile: 1 colonne */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
@@ -321,10 +367,11 @@ export default function Dashboard({ navigate }) {
             const actualNeeds = envelopes.filter(e => e.type === 'need').reduce((s, e) => s + (Number(e.budgetMonthly) || 0), 0);
             const actualWants = envelopes.filter(e => e.type === 'want').reduce((s, e) => s + (Number(e.budgetMonthly) || 0), 0);
             const actualSavAlloc = savingEnv + Math.max(0, remainder);
+            const split = idealSplit(profile);
             const rows = [
-              { label: 'Besoins', pct: 0.5, actual: actualNeeds, color: '#3b82f6', type: 'need', icon: '🧾', tip: '50%' },
-              { label: 'Épargne', pct: 0.2, actual: actualSavAlloc, color: '#10b981', type: 'saving', icon: '🏦', tip: '20%' },
-              { label: 'Plaisirs', pct: 0.3, actual: actualWants, color: '#8b5cf6', type: 'want', icon: '🎉', tip: '30%' },
+              { label: 'Besoins', pct: split.needs, actual: actualNeeds, color: '#3b82f6', type: 'need', icon: '🧾', tip: pctLabel(split.needs) },
+              { label: 'Épargne', pct: split.savings, actual: actualSavAlloc, color: '#10b981', type: 'saving', icon: '🏦', tip: pctLabel(split.savings) },
+              { label: 'Plaisirs', pct: split.wants, actual: actualWants, color: '#8b5cf6', type: 'want', icon: '🎉', tip: pctLabel(split.wants) },
             ];
             return (
               <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">

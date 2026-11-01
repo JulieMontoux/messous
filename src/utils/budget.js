@@ -225,3 +225,22 @@ export function chargeFromForm(form) {
   if (form.frequency === 'weekly') return { ...form, frequency: 'monthly', dueMonth: null, endMonth, amount: weeklyToMonthly(raw) };
   return { ...form, amount: raw, endMonth, dueMonth: form.frequency === 'monthly' ? null : Number(form.dueMonth) };
 }
+
+// Répartition du budget idéal (profil), en fractions : 50/30/20 par défaut
+export function idealSplit(profile = {}) {
+  const needs = Number(profile.idealNeedsPct ?? 50);
+  const wants = Number(profile.idealWantsPct ?? 30);
+  const savings = Number(profile.idealSavingsPct ?? 20);
+  const total = needs + wants + savings;
+  if (!(total > 0)) return { needs: 0.5, wants: 0.3, savings: 0.2 };
+  return { needs: needs / total, wants: wants / total, savings: savings / total };
+}
+
+export const pctLabel = f => `${Math.round(f * 100)} %`;
+
+// Reste reporté sur une enveloppe pour un mois donné (choisi à la clôture du mois précédent)
+export function carryoverFor(carryovers = [], envelopeId, month = monthKey()) {
+  return carryovers
+    .filter(c => c.envelopeId === envelopeId && c.month === month)
+    .reduce((s, c) => s + Number(c.amount), 0);
+}

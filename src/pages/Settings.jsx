@@ -6,6 +6,7 @@ import { REGIONS, ENVELOPE_CATEGORIES, generateId, getTobaccoType, tobaccoMonthl
 import { SUPERMARKETS, getSupermarket } from '../data/supermarkets';
 import { api } from '../api/client';
 import { fmt } from '../utils/budget';
+import { monthKey } from '../utils/period';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
 import TobaccoFields from '../components/TobaccoFields';
@@ -136,6 +137,121 @@ function ResetModal({ onClose, onDone }) {
   );
 }
 
+function formatMonthFr(yyyyMM) {
+  const [y, m] = yyyyMM.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+}
+
+// Salaire avec date d'effet : immédiat ou à partir d'un mois futur (appliqué automatiquement)
+function SalaryModal({ profile, dispatch, onClose }) {
+  const now = new Date();
+  const nextMonth = monthKey(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+  const [amount, setAmount] = useState(profile.nextSalary ?? profile.netSalary);
+  const [when, setWhen] = useState(profile.nextSalaryFrom ? 'custom' : 'now');
+  const [custom, setCustom] = useState(profile.nextSalaryFrom || nextMonth);
+  const [error, setError] = useState('');
+  const from = when === 'now' ? monthKey() : when === 'next' ? nextMonth : custom;
+
+  async function save() {
+    try {
+      const updated = await api.put('/api/profile/salary', { amount: Number(amount), from });
+      dispatch({ type: 'SET_PROFILE', payload: updated });
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  return (
+    <Modal
+      title="Salaire net mensuel"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>Annuler</button>
+          <button className="btn-primary" onClick={save} disabled={!(Number(amount) >= 0) || amount === ''}>Enregistrer</button>
+        </>
+      }
+    >
+      <input className="input text-lg" type="number" value={amount} onChange={e => setAmount(e.target.value)} autoFocus />
+      <div>
+        <label className="label">À partir de</label>
+        <div className="grid grid-cols-3 bg-slate-100 rounded-xl p-1 gap-1">
+          {[{ id: 'now', label: 'Ce mois-ci' }, { id: 'next', label: 'Mois prochain' }, { id: 'custom', label: 'Autre mois' }].map(o => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => setWhen(o.id)}
+              className={`py-2 rounded-lg text-xs font-semibold transition-colors ${when === o.id ? 'bg-white text-primary shadow-sm' : 'text-slate-500'}`}
+            >{o.label}</button>
+          ))}
+        </div>
+        {when === 'custom' && (
+          <input className="input mt-2" type="month" min={monthKey()} value={custom} onChange={e => setCustom(e.target.value)} />
+        )}
+      </div>
+      <p className="text-xs text-slate-500">
+        {from <= monthKey()
+          ? 'Appliqué tout de suite, y compris au mois en cours. Les mois passés ne changent pas.'
+          : `Appliqué automatiquement à partir de ${formatMonthFr(from)} : ${formatMonthFr(monthKey())} garde le salaire actuel (${fmt(profile.netSalary)}).`}
+      </p>
+      {error && <p className="text-sm text-danger">{error}</p>}
+    </Modal>
+  );
+}
+
+// Répartition du budget idéal (besoins / plaisirs / épargne), total 100 %
+function IdealSplitCard({ profile, dispatch }) {
+  const [draft, setDraft] = useState({
+    idealNeedsPct: profile.idealNeedsPct ?? 50,
+    idealWantsPct: profile.idealWantsPct ?? 30,
+    idealSavingsPct: profile.idealSavingsPct ?? 20,
+  });
+  const total = Number(draft.idealNeedsPct) + Number(draft.idealWantsPct) + Number(draft.idealSavingsPct);
+  const dirty = ['idealNeedsPct', 'idealWantsPct', 'idealSavingsPct'].some(k => Number(draft[k]) !== Number(profile[k] ?? { idealNeedsPct: 50, idealWantsPct: 30, idealSavingsPct: 20 }[k]));
+  const fields = [
+    { key: 'idealNeedsPct', label: '🧾 Besoins' },
+    { key: 'idealWantsPct', label: '🎉 Plaisirs' },
+    { key: 'idealSavingsPct', label: '🏦 Épargne' },
+  ];
+
+  return (
+    <div className="card space-y-3">
+      <SectionTitle>Budget idéal</SectionTitle>
+      <p className="text-xs text-slate-400 -mt-2">Répartition de ce qui reste après les charges fixes (règle 50/30/20 par défaut).</p>
+      <div className="grid grid-cols-3 gap-2">
+        {fields.map(f => (
+          <div key={f.key}>
+            <label className="label">{f.label}</label>
+            <div className="relative">
+              <input
+                className="input pr-7"
+                type="number"
+                min="0"
+                max="100"
+                value={draft[f.key]}
+                onChange={e => setDraft(d => ({ ...d, [f.key]: e.target.value === '' ? '' : Number(e.target.value) }))}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between">
+        <span className={`text-xs font-semibold ${total === 100 ? 'text-savings' : 'text-danger'}`}>Total : {total} %{total !== 100 && ' (doit faire 100 %)'}</span>
+        <div className="flex gap-2">
+          <button className="btn-secondary text-xs py-1.5" onClick={() => setDraft({ idealNeedsPct: 50, idealWantsPct: 30, idealSavingsPct: 20 })}>50/30/20</button>
+          <button
+            className="btn-primary text-xs py-1.5"
+            disabled={total !== 100 || !dirty}
+            onClick={() => dispatch({ type: 'UPDATE_PROFILE', payload: draft })}
+          >Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AlertsCard({ profile, dispatch }) {
   const [email, setEmail] = useState(profile.alertEmail || '');
   const [test, setTest] = useState(null);
@@ -243,6 +359,7 @@ export default function Settings() {
   const [editModal, setEditModal] = useState(null);
   const [resetModal, setResetModal] = useState(false);
   const [editVal, setEditVal] = useState('');
+  const [salaryOpen, setSalaryOpen] = useState(false);
 
   function openEdit(field, current) {
     setEditModal(field);
@@ -276,8 +393,20 @@ export default function Settings() {
         <Row
           label="Salaire net mensuel"
           value={`${Number(profile.netSalary).toLocaleString('fr-FR')} €`}
-          onClick={() => openEdit('netSalary', profile.netSalary)}
+          onClick={() => setSalaryOpen(true)}
         />
+        {profile.nextSalary != null && profile.nextSalaryFrom && (
+          <div className="flex items-center justify-between text-xs bg-primary/5 text-primary rounded-lg px-3 py-2 -mt-1 mb-1">
+            <span>→ {fmt(profile.nextSalary)} à partir de {formatMonthFr(profile.nextSalaryFrom)}</span>
+            <button
+              className="text-slate-400 hover:text-danger"
+              onClick={async () => {
+                await api.delete('/api/profile/salary/pending');
+                dispatch({ type: 'SET_PROFILE', payload: { nextSalary: null, nextSalaryFrom: null } });
+              }}
+            >Annuler</button>
+          </div>
+        )}
         <Row label="Région" value={profile.region} onClick={() => openEdit('region', profile.region)} />
         <Row
           label="Supermarché habituel"
@@ -329,6 +458,8 @@ export default function Settings() {
 
       <div className="space-y-4">
       {profile.isSmoker && <TobaccoCard key={profile.tobaccoType} profile={profile} envelopes={envelopes} dispatch={dispatch} />}
+
+      <IdealSplitCard profile={profile} dispatch={dispatch} />
 
       <AlertsCard profile={profile} dispatch={dispatch} />
 
@@ -401,6 +532,8 @@ export default function Settings() {
           )}
         </Modal>
       )}
+
+      {salaryOpen && <SalaryModal profile={profile} dispatch={dispatch} onClose={() => setSalaryOpen(false)} />}
 
       {/* Reset confirmation */}
       {resetModal && <ResetModal onClose={() => setResetModal(false)} onDone={() => { setResetModal(false); dispatch({ type: 'RESET' }); }} />}

@@ -73,3 +73,24 @@ test('pas d\'e-mail d\'alerte pour une dépense du mois précédent', async () =
   assert.equal(isInCurrentMonth(iso(today)), true);
   assert.equal(isInCurrentMonth(iso(day(40))), false);
 });
+
+test('rappel e-mail 7 jours avant l\'expiration de la connexion bancaire, puis expiration', async () => {
+  const { bankExpiryReminders } = require('../src/lib/scheduler');
+  const u = await newUser();
+  const { rows: [me] } = await pool.query('SELECT id FROM users WHERE email = $1', [u.email]);
+  const inFiveDays = new Date(Date.now() + 5 * 86400000);
+  const { rows: [conn] } = await pool.query(
+    "INSERT INTO bank_connections (user_id, provider, bank_name, status, valid_until) VALUES ($1, 'enablebanking', 'Ma Banque', 'active', $2) RETURNING id",
+    [me.id, inFiveDays]
+  );
+  // SMTP absent en test : l'e-mail n'est pas envoyé, mais la tentative est journalisée puis annulée
+  const logs = [];
+  const orig = console.log;
+  console.log = (...a) => logs.push(a.join(' '));
+  try { await bankExpiryReminders(); } finally { console.log = orig; }
+  assert.ok(logs.some(l => l.includes('expire dans 5 jours')), logs.join('\n'));
+
+  await bankExpiryReminders(new Date(Date.now() + 6 * 86400000));
+  const { rows: [after] } = await pool.query('SELECT status FROM bank_connections WHERE id = $1', [conn.id]);
+  assert.equal(after.status, 'expired');
+});

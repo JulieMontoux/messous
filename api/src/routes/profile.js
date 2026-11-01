@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { pool } = require('../db');
 const auth = require('../middleware/auth');
 const bcrypt = require('bcryptjs');
+const { monthKey } = require('../lib/dates');
 const { sendMail, layout, isMailConfigured, recipientFor } = require('../lib/mailer');
 
 router.use(auth);
@@ -27,6 +28,11 @@ function toClient(r) {
     alertEmail: r.alert_email || '',
     monthEndEmail: r.month_end_email ?? true,
     roundWithdrawals: r.round_withdrawals ?? true,
+    idealNeedsPct: r.ideal_needs_pct ?? 50,
+    idealWantsPct: r.ideal_wants_pct ?? 30,
+    idealSavingsPct: r.ideal_savings_pct ?? 20,
+    nextSalary: r.next_salary != null ? Number(r.next_salary) : null,
+    nextSalaryFrom: r.next_salary_from || null,
   };
 }
 
@@ -51,9 +57,22 @@ const FIELDS = {
   alertEmail: ['alert_email', v => (v ? String(v).trim() : null)],
   monthEndEmail: 'month_end_email',
   roundWithdrawals: 'round_withdrawals',
+  idealNeedsPct: 'ideal_needs_pct',
+  idealWantsPct: 'ideal_wants_pct',
+  idealSavingsPct: 'ideal_savings_pct',
 };
 
+// Applique un nouveau salaire programmé dès que son mois d'effet est arrivé
+async function applyPendingSalary(userId) {
+  await pool.query(
+    `UPDATE profiles SET net_salary = next_salary, next_salary = NULL, next_salary_from = NULL
+     WHERE user_id = $1 AND next_salary IS NOT NULL AND next_salary_from <= $2`,
+    [userId, monthKey()]
+  );
+}
+
 router.get('/', async (req, res) => {
+  await applyPendingSalary(req.user.userId);
   const { rows } = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [req.user.userId]);
   const { rows: [user] } = await pool.query('SELECT email FROM users WHERE id = $1', [req.user.userId]);
   res.json(rows[0] ? { ...toClient(rows[0]), accountEmail: user?.email || '', mailConfigured: isMailConfigured() } : {});
@@ -78,6 +97,30 @@ router.put('/', async (req, res) => {
       : await pool.query('SELECT * FROM profiles WHERE user_id = $1', [req.user.userId]);
     res.json(toClient(rows[0]));
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Nouveau salaire : immédiat (from = mois en cours ou absent) ou à partir d'un mois futur
+router.put('/salary', async (req, res) => {
+  try {
+    const { amount, from } = req.body;
+    const value = Number(amount);
+    if (!(value >= 0)) return res.status(400).json({ error: 'Montant invalide' });
+    const current = monthKey();
+    if (!from || from <= current) {
+      await pool.query('UPDATE profiles SET net_salary = $2, next_salary = NULL, next_salary_from = NULL WHERE user_id = $1', [req.user.userId, value]);
+    } else if (/^\d{4}-\d{2}$/.test(from)) {
+      await pool.query('UPDATE profiles SET next_salary = $2, next_salary_from = $3 WHERE user_id = $1', [req.user.userId, value, from]);
+    } else {
+      return res.status(400).json({ error: 'Mois invalide' });
+    }
+    const { rows } = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [req.user.userId]);
+    res.json(toClient(rows[0]));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/salary/pending', async (req, res) => {
+  await pool.query('UPDATE profiles SET next_salary = NULL, next_salary_from = NULL WHERE user_id = $1', [req.user.userId]);
+  res.json({ ok: true });
 });
 
 router.post('/test-email', async (req, res) => {
@@ -107,7 +150,7 @@ router.post('/reset', async (req, res) => {
     for (const table of [
       'bank_rules', 'bank_transactions', 'bank_accounts', 'bank_connections', 'withdrawals',
       'recurring_transactions', 'transactions', 'envelopes', 'fixed_charges', 'savings_history',
-      'savings_goals', 'ai_suggestions', 'email_log', 'profiles',
+      'savings_goals', 'ai_suggestions', 'email_log', 'envelope_carryovers', 'profiles',
     ]) {
       await client.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
     }
