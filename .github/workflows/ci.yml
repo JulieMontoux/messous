@@ -196,7 +196,7 @@ jobs:
       - name: Fichiers en lecture seule pour root (comme un fichier copié par scp sur le serveur)
         run: find . -path ./.git -prune -o -type f -print0 | xargs -0 chmod 600
       - name: Build de l'image ${{ matrix.name }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
