@@ -5,6 +5,9 @@ const { buildMonthlyReport } = require('../lib/report');
 
 router.use(auth);
 
+// Mois au format AAAA-MM (01 à 12)
+const isMonth = m => /^\d{4}-(0[1-9]|1[0-2])$/.test(m || '');
+
 const toClient = r => ({
   month: r.month,
   salary: Number(r.salary),
@@ -34,13 +37,14 @@ router.get('/', async (req, res) => {
 // Bilan d'un mois (même contenu que l'e-mail du 1er du mois)
 router.get('/:month/report', async (req, res) => {
   try {
-    if (!/^\d{4}-\d{2}$/.test(req.params.month)) return res.status(400).json({ error: 'Mois invalide' });
+    if (!isMonth(req.params.month)) return res.status(400).json({ error: 'Mois invalide' });
     res.json(await buildMonthlyReport(req.user.userId, req.params.month));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.put('/:month', async (req, res) => {
   try {
+    if (!isMonth(req.params.month)) return res.status(400).json({ error: 'Mois invalide' });
     const { salary, totalFixed, totalEnvelopes, programmedSavings, savingEnvelopes, remainder, totalSavings, recordedAt } = req.body;
     const { rows } = await pool.query(
       `INSERT INTO savings_history (user_id, month, salary, total_fixed, total_envelopes, programmed_savings, saving_envelopes, remainder, total_savings, recorded_at)
@@ -63,7 +67,7 @@ router.put('/:month/close', async (req, res) => {
   try {
     const { actualSavings, actualRemainder, remainderToGoalId = null, carryovers } = req.body;
     const month = req.params.month;
-    if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'Mois invalide' });
+    if (!isMonth(month)) return res.status(400).json({ error: 'Mois invalide' });
     await client.query('BEGIN');
     const { rows: [prev] } = await client.query(
       'SELECT actual_remainder, remainder_to_goal_id FROM savings_history WHERE user_id = $1 AND month = $2 FOR UPDATE',

@@ -43,3 +43,20 @@ const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')
 const fr = d => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 
 module.exports = { app, request, pool, setup, newUser, csvBody, day, iso, fr };
+
+// Capture les e-mails « envoyés » (SMTP absent en test : le mailer journalise la tentative)
+async function captureMails(fn) {
+  const logs = [];
+  const orig = console.log;
+  console.log = (...a) => { const l = a.join(' '); if (l.startsWith('[mail]')) logs.push(l); else orig(...a); };
+  try { await fn(); } finally { console.log = orig; }
+  return logs;
+}
+
+async function userId(u) {
+  const { rows: [me] } = await pool.query('SELECT id FROM users WHERE email = $1', [u.email]);
+  return me.id;
+}
+
+module.exports.captureMails = captureMails;
+module.exports.userId = userId;
