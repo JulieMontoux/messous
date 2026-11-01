@@ -231,6 +231,14 @@ function App() {
   const { isAuthenticated } = useAuth();
   const [authMode, setAuthMode] = useState('login');
 
+  // Après une connexion, l'écran à afficher en cas de déconnexion redevient « connexion »
+  // (et non l'inscription) — ajustement d'état pendant le rendu, sans effet
+  const [wasAuthenticated, setWasAuthenticated] = useState(isAuthenticated);
+  if (wasAuthenticated !== isAuthenticated) {
+    setWasAuthenticated(isAuthenticated);
+    if (isAuthenticated) setAuthMode('login');
+  }
+
   if (!isAuthenticated) {
     return authMode === 'login'
       ? <Login onSwitch={() => setAuthMode('register')} />

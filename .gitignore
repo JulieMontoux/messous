@@ -33,3 +33,7 @@ secrets/*
 
 # Sauvegardes de la base
 backups/
+
+# Playwright
+test-results/
+playwright-report/
