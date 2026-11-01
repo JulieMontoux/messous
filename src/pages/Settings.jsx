@@ -11,6 +11,7 @@ import { monthKey } from '../utils/period';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
 import TobaccoFields from '../components/TobaccoFields';
+import AccountCard from '../components/AccountCard';
 
 function Counter({ label, value, onChange }) {
   return (
@@ -598,6 +599,8 @@ export default function Settings() {
       <IdealSplitCard profile={profile} dispatch={dispatch} />
 
       <AlertsCard profile={profile} dispatch={dispatch} />
+
+      <AccountCard email={profile.accountEmail} />
 
       {/* Données */}
       <div className="card">

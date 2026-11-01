@@ -1,6 +1,7 @@
 // Outils de test : base PostgreSQL réelle (DATABASE_URL), migrations, comptes jetables
 process.env.NODE_ENV = 'test';
 process.env.REGISTER_LIMIT = '1000';
+process.env.RESET_LIMIT = '1000';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_secret_test_secret_test_secret_123';
 process.env.TZ = process.env.TZ || 'Europe/Paris';
 

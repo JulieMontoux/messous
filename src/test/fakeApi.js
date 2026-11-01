@@ -155,6 +155,10 @@ export function installFakeApi(overrides = {}) {
   on('GET', /^\/api\/export\/(\w+)\.csv$/, () => (db.exportError ? [500, { error: 'panne' }] : 'Date;Montant\n'));
   on('POST', /^\/api\/auth\/login$/, b => (b.password === 'motdepasse1' ? { token: 'jeton', user: { email: b.email } } : [401, { error: 'Email ou mot de passe incorrect' }]));
   on('POST', /^\/api\/auth\/register$/, b => (db.registerError ? [409, { error: db.registerError }] : { token: 'jeton', user: { email: b.email } }));
+  on('POST', /^\/api\/auth\/forgot$/, () => (db.forgotError ? [429, { error: db.forgotError }] : { ok: true }));
+  on('POST', /^\/api\/auth\/reset$/, b => (b.token === 'bon-jeton' ? { token: 'jeton-reset', user: { email: 'julie@exemple.fr' } } : [400, { error: 'Lien invalide ou expiré : refais une demande.' }]));
+  on('PUT', /^\/api\/auth\/password$/, b => (b.currentPassword === 'motdepasse1' ? { token: 'jeton-nouveau', user: { email: 'julie@exemple.fr' } } : [403, { error: 'Mot de passe actuel incorrect' }]));
+  on('DELETE', /^\/api\/auth\/account$/, b => (b.password === 'motdepasse1' ? { ok: true } : [403, { error: 'Mot de passe incorrect' }]));
   on('GET', /^\/version\.json/, () => ({ version: db.serverVersion || 'dev' }));
 
   const fetchMock = vi.fn(async (url, opts = {}) => {

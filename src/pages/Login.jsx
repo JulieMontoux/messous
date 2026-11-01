@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-export default function Login({ onSwitch }) {
+export default function Login({ onSwitch, onForgot }) {
   const { login } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
@@ -53,6 +53,11 @@ export default function Login({ onSwitch }) {
             />
           </div>
           {error && <p className="text-sm text-danger font-medium">{error}</p>}
+          <p className="text-right -mt-2">
+            <button type="button" onClick={onForgot} className="text-xs text-primary font-medium">
+              Mot de passe oublié ?
+            </button>
+          </p>
           <button className="btn-primary w-full" type="submit" disabled={loading}>
             {loading ? 'Connexion…' : 'Se connecter'}
           </button>

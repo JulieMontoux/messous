@@ -34,11 +34,17 @@ paiements carte, objectifs d'épargne et historique.
 | **Tabac** : paquets achetés ce mois, mode « j'arrête » (jours et euros économisés) | Tableau de bord, Profil |
 | **Notifications push** sur le téléphone (mêmes alertes que les e-mails) | Profil |
 | **Mode sombre** (auto / clair / sombre) et **export CSV** (dépenses, banque, historique…) | Profil |
+| **Comptes séparés** : chaque personne a son propre compte et ses propres données ; mot de passe oublié (lien par e-mail valable 1 h), changement de mot de passe, suppression du compte et de toutes ses données | Connexion, Profil → Compte |
 | **Rechargement automatique** : le serveur se met à jour tout seul à chaque push, et l'app ouverte dans le navigateur se recharge sur la nouvelle version | voir plus bas |
 
 ## Sécurité
 
 - Connexion : 10 échecs max par compte (30 par IP) sur 15 min, 5 inscriptions par heure et par IP.
+- Mot de passe oublié : 5 demandes par heure et par IP, 3 par adresse ; même réponse que l'adresse soit
+  inscrite ou non ; seule l'empreinte SHA-256 du lien est stockée ; lien à usage unique, valable 1 h, jamais
+  envoyé au serveur (fragment `#reset=`). Sans `APP_URL`, aucun lien n'est envoyé.
+- Changer ou réinitialiser son mot de passe déconnecte les autres appareils et envoie un e-mail de sécurité.
+- Supprimer son compte efface toutes ses données (les sauvegardes quotidiennes les conservent jusqu'à leur rotation).
 - CORS désactivé par défaut (le front et l'API partagent le domaine) ; `CORS_ORIGIN` pour l'ouvrir.
 - `JWT_SECRET` : 32 caractères minimum (`openssl rand -hex 32`), un avertissement s'affiche sinon.
 - En-têtes de sécurité ajoutés par nginx.
@@ -121,6 +127,8 @@ dans `./backups/messous-AAAA-MM-JJ_HHMM.dump`. Les fichiers de plus de 30 jours 
 Renseigner `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` et `APP_URL` dans `.env`
 (Gmail : mot de passe d'application, port 587). Le bouton *Test* du profil envoie un e-mail de vérification.
 Chaque alerte n'est envoyée qu'une fois par enveloppe, par mois et par seuil.
+Le SMTP et `APP_URL` (adresse publique de l'app, ex. `https://budget.mondomaine.fr`) sont aussi nécessaires
+au « Mot de passe oublié ».
 
 ### Réseau
 
