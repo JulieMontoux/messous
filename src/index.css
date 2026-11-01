@@ -32,3 +32,47 @@
     @apply inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full;
   }
 }
+
+/* ─── Mode sombre ────────────────────────────────────────────────────────────
+   Classe .dark sur <html> (profil : auto / clair / sombre). Plutôt que de dupliquer
+   chaque classe dans les pages, les couleurs claires utilisées partout sont remappées. */
+@layer utilities {
+  .dark { color-scheme: dark; }
+  .dark body { background-color: #0b1120; color: #e2e8f0; }
+
+  .dark .bg-white { background-color: #172033; }
+  .dark .bg-white\/95 { background-color: rgb(23 32 51 / 0.95); }
+  .dark .bg-slate-50 { background-color: #0f172a; }
+  .dark .bg-slate-100 { background-color: #1e293b; }
+  .dark .bg-slate-200 { background-color: #334155; }
+  .dark .hover\:bg-slate-50:hover { background-color: #1e293b; }
+  .dark .hover\:bg-slate-100:hover { background-color: #263247; }
+  .dark .hover\:bg-slate-200:hover { background-color: #334155; }
+
+  .dark .text-slate-800 { color: #f1f5f9; }
+  .dark .text-slate-700 { color: #e2e8f0; }
+  .dark .text-slate-600 { color: #cbd5e1; }
+  .dark .text-slate-500 { color: #a3b1c6; }
+  .dark .text-slate-400 { color: #8494ab; }
+  .dark .text-slate-300 { color: #5b6b82; }
+  .dark .hover\:text-slate-800:hover,
+  .dark .hover\:text-slate-600:hover { color: #f1f5f9; }
+
+  .dark .border-slate-50,
+  .dark .divide-slate-50 > :not([hidden]) ~ :not([hidden]) { border-color: #1e293b; }
+  .dark .border-slate-100 { border-color: #243049; }
+  .dark .border-slate-200 { border-color: #334155; }
+
+  .dark .card { background-color: #172033; border-color: #243049; }
+  .dark .input { background-color: #0f172a; border-color: #334155; color: #e2e8f0; }
+  .dark .input::placeholder { color: #5b6b82; }
+  .dark .btn-secondary { background-color: #1e293b; color: #e2e8f0; }
+  .dark .btn-secondary:hover { background-color: #334155; }
+  .dark .label { color: #a3b1c6; }
+  .dark .shadow-sm, .dark .shadow-lg, .dark .shadow-xl { --tw-shadow-color: rgb(0 0 0 / 0.4); }
+}
+
+@layer utilities {
+  /* Pastilles des interrupteurs : restent claires en mode sombre */
+  .dark .knob { background-color: #f8fafc; }
+}

@@ -753,7 +753,7 @@ export default function Envelopes() {
               </span>
             </div>
             <div className={`w-9 h-5 rounded-full transition-colors ${txForm.recurring ? 'bg-primary' : 'bg-slate-200'}`}>
-              <div className={`w-4 h-4 rounded-full bg-white shadow-sm mt-0.5 transition-transform ${txForm.recurring ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              <div className={`knob w-4 h-4 rounded-full bg-white shadow-sm mt-0.5 transition-transform ${txForm.recurring ? 'translate-x-4' : 'translate-x-0.5'}`} />
             </div>
           </div>
           {txForm.recurring && (

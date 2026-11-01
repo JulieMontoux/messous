@@ -16,6 +16,7 @@ import History from './pages/History';
 import Bank from './pages/Bank';
 import Advances from './pages/Advances';
 import { api, fetchAll } from './api/client';
+import { useTheme } from './hooks/useTheme';
 import {
   totalFixed as getTotalFixed,
   totalProgrammedSavings,
@@ -143,6 +144,7 @@ function MigrationScreen({ onDone }) {
 
 function BudgetApp() {
   const { state, dispatch, ready, loadError, reload } = useBudget();
+  useTheme(state.profile.theme);
   const { logout } = useAuth();
   const [params, setParams] = useState(readUrlParams);
   const [page, setPageState] = useState(() => (PAGES[params.page] ? params.page : 'dashboard'));

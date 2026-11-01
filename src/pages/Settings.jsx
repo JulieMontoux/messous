@@ -435,7 +435,7 @@ function Toggle({ label, sub, value, onChange }) {
         onClick={() => onChange(!value)}
         className={`w-11 h-6 flex-shrink-0 rounded-full transition-colors relative ${value ? 'bg-primary' : 'bg-slate-200'}`}
       >
-        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${value ? 'left-6' : 'left-1'}`} />
+        <div className={`absolute top-1 knob w-4 h-4 bg-white rounded-full shadow transition-all ${value ? 'left-6' : 'left-1'}`} />
       </button>
     </div>
   );
@@ -530,6 +530,18 @@ export default function Settings() {
           value={profile.hasCar}
           onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { hasCar: v } })}
         />
+        <div className="flex items-center justify-between gap-3 py-3 border-b border-slate-50">
+          <span className="text-sm text-slate-700 font-medium">🌓 Thème</span>
+          <div className="flex bg-slate-100 rounded-lg p-0.5 gap-0.5">
+            {[{ id: 'auto', label: 'Auto' }, { id: 'light', label: 'Clair' }, { id: 'dark', label: 'Sombre' }].map(t => (
+              <button
+                key={t.id}
+                onClick={() => dispatch({ type: 'UPDATE_PROFILE', payload: { theme: t.id } })}
+                className={`px-3 py-1 rounded-md text-xs font-semibold ${(profile.theme || 'auto') === t.id ? 'bg-white text-primary shadow-sm' : 'text-slate-500'}`}
+              >{t.label}</button>
+            ))}
+          </div>
+        </div>
         <Toggle
           label="💶 Arrondir les retraits à la dizaine"
           sub="Pas de billets de 5 € au distributeur : 17 € → 20 €. Sinon, montants exacts à l'euro près."
