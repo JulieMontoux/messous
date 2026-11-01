@@ -60,7 +60,7 @@ services:
     environment:
       DATABASE_URL: postgres://messous:${DB_PASSWORD}@db:5432/messous
       JWT_SECRET: ${JWT_SECRET}
-      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
       PORT: 3001
       TZ: ${TZ:-Europe/Paris}
       APP_URL: ${APP_URL:-http://localhost}
