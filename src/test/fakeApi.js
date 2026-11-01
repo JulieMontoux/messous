@@ -7,9 +7,12 @@ let seq = 0;
 const newId = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
 
 function jsonResponse(status, body) {
+  // Comme l'API réelle : un 429 indique une attente longue (pas de nouvel essai automatique)
+  const headers = { 'Retry-After': status === 429 ? '3600' : null };
   return {
     ok: status < 400,
     status,
+    headers: { get: name => headers[name] ?? null },
     json: async () => {
       if (body === undefined) throw new Error('pas de JSON');
       return JSON.parse(JSON.stringify(body));

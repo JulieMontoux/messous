@@ -134,8 +134,14 @@ async function syncToApi(action) {
       const { profile, fixedCharges, envelopes } = action.payload;
       const regDate = new Date().toISOString();
       await api.put('/api/profile', { ...toApiProfile(profile), onboardingDone: true, registrationDate: regDate });
-      await Promise.all(fixedCharges.map(c => api.post('/api/charges', c)));
-      await Promise.all(envelopes.map(e => api.post('/api/envelopes', e)));
+      // Un par un (pas de rafale de requêtes) et sans s'arrêter au premier échec
+      let failed = 0;
+      for (const [path, items] of [['/api/charges', fixedCharges], ['/api/envelopes', envelopes]]) {
+        for (const item of items) {
+          await api.post(path, item).catch(() => { failed += 1; });
+        }
+      }
+      if (failed) throw new Error(`${failed} élément(s) du démarrage non enregistré(s) — recharge la page pour vérifier`);
       break;
     }
 
@@ -206,12 +212,18 @@ export function BudgetProvider({ children }) {
   useEffect(() => { load(); }, [load]);
 
   const apiDispatch = useCallback((action) => {
-    dispatch(action);
-    syncToApi(action).catch(err => {
+    const onError = err => {
       console.error('[API sync]', action.type, err.message);
       // Affiche un bandeau d'erreur visible si la sauvegarde échoue
       window.dispatchEvent(new CustomEvent('messous:sync-error', { detail: err.message }));
-    });
+    };
+    // Fin du démarrage : on enregistre tout AVANT d'ouvrir l'application, sinon un rechargement
+    // pendant l'enregistrement perdrait des charges ou des enveloppes
+    if (action.type === 'COMPLETE_ONBOARDING') {
+      return syncToApi(action).catch(onError).finally(() => dispatch(action));
+    }
+    dispatch(action);
+    return syncToApi(action).catch(onError);
   }, []);
 
   return (
