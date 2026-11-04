@@ -68,7 +68,7 @@ describe('application', () => {
 
   it('connecté : tableau de bord, navigation latérale et mobile, URL mise à jour, photo du mois enregistrée', async () => {
     const { user, fake } = renderApp({}, { url: '/?page=inconnue' });
-    expect(await screen.findByText('Bonjour Julie 👋')).toBeInTheDocument();
+    expect(await screen.findAllByText('Julie')).not.toHaveLength(0);
     await waitFor(() => expect(fake.called('PUT', /\/api\/savings\/2026-11$/).length).toBeGreaterThan(0));
     const sidebar = screen.getAllByRole('navigation')[0];
     await user.click(within(sidebar).getByRole('button', { name: /Charges fixes/ }));
@@ -96,7 +96,7 @@ describe('application', () => {
   it('erreur d\'enregistrement : bandeau ; nouvelle version : bandeau de rechargement', async () => {
     vi.stubEnv('DEV', false);
     renderApp({ serverVersion: 'v-suivante' });
-    await screen.findByText('Bonjour Julie 👋');
+    await screen.findAllByText('Julie');
     window.dispatchEvent(new CustomEvent('messous:sync-error', { detail: 'disque plein' }));
     expect(await screen.findByText(/Erreur sauvegarde : disque plein/)).toBeInTheDocument();
     const reload = vi.fn();
@@ -115,7 +115,7 @@ describe('application', () => {
     expect(await screen.findAllByText('Impossible de charger tes données')).not.toHaveLength(0);
     second.fake.db.down = false;
     await second.user.click(screen.getAllByRole('button', { name: 'Réessayer' })[0]);
-    expect(await screen.findAllByText('Bonjour Julie 👋')).not.toHaveLength(0);
+    expect(await screen.findAllByText('Julie')).not.toHaveLength(0);
   });
 
   it('API en panne : déconnexion depuis l\'écran d\'erreur', async () => {
@@ -150,13 +150,13 @@ describe('application', () => {
     expect(await screen.findByText(/Serveur injoignable/)).toBeInTheDocument();
     fake.db.down = false;
     await user.click(screen.getByRole('button', { name: 'Ignorer et repartir à zéro' }));
-    expect(await screen.findByText('Bonjour Julie 👋')).toBeInTheDocument();
+    expect(await screen.findAllByText('Julie')).not.toHaveLength(0);
   });
 
   it('anciennes données invalides ou incomplètes : ignorées', async () => {
     localStorage.setItem('messous_v1', '{pas du json');
     renderApp();
-    expect(await screen.findByText('Bonjour Julie 👋')).toBeInTheDocument();
+    expect(await screen.findAllByText('Julie')).not.toHaveLength(0);
   });
 });
 

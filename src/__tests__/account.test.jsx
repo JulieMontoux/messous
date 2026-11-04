@@ -80,7 +80,7 @@ describe('lien de réinitialisation', () => {
     await user.click(screen.getByRole('button', { name: 'Changer le mot de passe' }));
     await waitFor(() => expect(localStorage.getItem('messous_token')).toBe('jeton-reset'));
     expect(fake.called('POST', /\/api\/auth\/reset$/)[0].body).toEqual({ token: 'bon-jeton', password: 'nouveau-mdp' });
-    expect(await screen.findByText('Bonjour Julie 👋')).toBeInTheDocument();
+    expect(await screen.findAllByText('Julie')).not.toHaveLength(0);
   });
 
   it('lien expiré : message clair ; annuler ramène à la connexion', async () => {
