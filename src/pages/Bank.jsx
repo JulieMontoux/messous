@@ -20,9 +20,9 @@ const FILTERS = [
 function SpendTile({ label, value, sub, accent = 'text-slate-800' }) {
   return (
     <div className="rounded-xl bg-slate-50 px-3 py-2.5">
-      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
+      <p className="text-xs font-semibold text-slate-400">{label}</p>
       <p className={cn('text-lg font-bold', accent)}>{fmt(value)}</p>
-      {sub && <p className="text-[10px] text-slate-400">{sub}</p>}
+      {sub && <p className="text-xs text-slate-400">{sub}</p>}
     </div>
   );
 }
@@ -109,7 +109,7 @@ function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, suggestion, o
             <div className="flex items-center gap-2 mt-2">
               <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 font-medium px-2 py-1 rounded-full flex items-center gap-1">
                 <Sparkles size={11} /> {targetLabel(suggestion.target, envelopes, fixedCharges)} ?
-                <span className="text-[10px] text-amber-500 font-normal">{suggestion.source === 'ai' ? 'IA' : 'marchand connu'}</span>
+                <span className="text-xs text-amber-500 font-normal">{suggestion.source === 'ai' ? 'IA' : 'marchand connu'}</span>
               </span>
               <button
                 onClick={() => onAssign(b, targetBody(suggestion.target), false)}

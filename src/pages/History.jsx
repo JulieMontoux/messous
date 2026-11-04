@@ -160,7 +160,7 @@ function StatCard({ icon: Icon, label, value, sub, color = 'text-savings' }) {
   return (
     <div className="card text-center py-4">
       <Icon size={18} className={`${color} mx-auto mb-1`} />
-      <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">{label}</p>
+      <p className="text-xs text-slate-400 font-semibold">{label}</p>
       <p className={`text-xl font-bold mt-1 ${color}`}>{value}</p>
       {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
     </div>
@@ -313,15 +313,15 @@ export default function History({ params = {} }) {
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-slate-700 text-sm">{formatMonthLong(snap.month)}</p>
                         {isCurrentMonth && !snap.closedAt && (
-                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">en cours · prévisionnel</span>
+                          <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">en cours · prévisionnel</span>
                         )}
                         {snap.closedAt && (
-                          <span className="text-[10px] bg-savings/10 text-savings px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5"><CheckCircle2 size={10} /> clôturé</span>
+                          <span className="text-xs bg-savings/10 text-savings px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5"><CheckCircle2 size={10} /> clôturé</span>
                         )}
                       </div>
                       <div className="text-right">
                         <p className="font-bold text-savings">{fmt(real ?? snap.totalSavings)}</p>
-                        {real != null && <p className="text-[10px] text-slate-400">prévu {fmt(snap.totalSavings)}</p>}
+                        {real != null && <p className="text-xs text-slate-400">prévu {fmt(snap.totalSavings)}</p>}
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-400">

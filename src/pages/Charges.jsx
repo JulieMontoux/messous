@@ -66,7 +66,7 @@ function ChargeRow({ charge, onEdit, onDelete }) {
       </div>
       <div className="text-right flex-shrink-0">
         <p className="font-bold text-slate-800">{fmt(charge.amount)}</p>
-        {freq !== 'monthly' && <p className="text-[10px] text-slate-400">{FREQ_SUFFIX[freq]}</p>}
+        {freq !== 'monthly' && <p className="text-xs text-slate-400">{FREQ_SUFFIX[freq]}</p>}
       </div>
       <button onClick={onEdit} className="p-1.5 text-slate-300 hover:text-primary transition-colors">
         <Pencil size={15} />
@@ -145,7 +145,7 @@ export default function Charges() {
       <div className="card bg-fixed/5 border-fixed/20">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Total mensuel</p>
+            <p className="text-xs text-slate-500 font-medium">Total mensuel</p>
             <p className="text-3xl font-bold text-slate-800 mt-1">{fmt(total)}</p>
           </div>
           <div className="text-right">
@@ -199,7 +199,7 @@ export default function Charges() {
       ) : (
         grouped.map(group => (
           <div key={group.id}>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
+            <p className="text-xs font-semibold text-slate-400 mb-2">
               {group.icon} {group.name}
             </p>
             <div className="space-y-2">
@@ -221,7 +221,7 @@ export default function Charges() {
 
       {ended.length > 0 && (
         <div>
-          <button onClick={() => setShowEnded(v => !v)} className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1 mb-2">
+          <button onClick={() => setShowEnded(v => !v)} className="text-xs font-semibold text-slate-400 flex items-center gap-1 mb-2">
             {showEnded ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Terminées ({ended.length})
           </button>
           {showEnded && (

@@ -27,7 +27,7 @@ function Counter({ label, value, onChange }) {
 }
 
 function SectionTitle({ children }) {
-  return <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">{children}</p>;
+  return <p className="text-xs font-medium text-slate-400 mb-1">{children}</p>;
 }
 
 // Profil tabac : édition locale puis enregistrement, avec mise à jour optionnelle de l'enveloppe tabac
@@ -108,7 +108,7 @@ function ResetModal({ onClose, onDone }) {
 
   return (
     <Modal
-      title="⚠️ Réinitialiser toutes les données ?"
+      title="Réinitialiser toutes les données ?"
       onClose={onClose}
       footer={
         <>
@@ -513,7 +513,7 @@ export default function Settings() {
 
       {/* Profile */}
       <div className="card">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Profil</p>
+        <p className="text-xs font-medium text-slate-400 mb-1">Profil</p>
         <Row label="Prénom" value={profile.firstName || '—'} onClick={() => openEdit('firstName', profile.firstName)} />
         <Row
           label="Salaire net mensuel"
@@ -542,7 +542,7 @@ export default function Settings() {
 
       {/* Foyer */}
       <div className="card">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Foyer</p>
+        <p className="text-xs font-medium text-slate-400 mb-1">Foyer</p>
         <Row
           label="Adultes"
           value={profile.householdAdults}
@@ -560,9 +560,9 @@ export default function Settings() {
 
       {/* Préférences */}
       <div className="card">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Préférences</p>
+        <p className="text-xs font-medium text-slate-400 mb-1">Préférences</p>
         <Toggle
-          label="🚗 J'ai une voiture"
+          label="J'ai une voiture"
           value={profile.hasCar}
           onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { hasCar: v } })}
         />
@@ -579,13 +579,13 @@ export default function Settings() {
           </div>
         </div>
         <Toggle
-          label="💶 Arrondir les retraits à la dizaine"
+          label="Arrondir les retraits à la dizaine"
           sub="Pas de billets de 5 € au distributeur : 17 € → 20 €. Sinon, montants exacts à l'euro près."
           value={profile.roundWithdrawals !== false}
           onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { roundWithdrawals: v } })}
         />
         <Toggle
-          label="🚬 Je fume"
+          label="Je fume"
           sub="Profil tabac, enveloppe et alerte dédiées"
           value={profile.isSmoker}
           onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { isSmoker: v } })}
@@ -604,7 +604,7 @@ export default function Settings() {
 
       {/* Données */}
       <div className="card">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Données</p>
+        <p className="text-xs font-semibold text-slate-400 mb-3">Données</p>
         <ExportButtons />
         <button
           onClick={() => setResetModal(true)}

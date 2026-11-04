@@ -253,7 +253,7 @@ function AiSection() {
             onClick={() => setHistoryOpen(o => !o)}
             className="flex items-center justify-between w-full text-left"
           >
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+            <span className="text-xs font-semibold text-slate-400">
               Historique ({history.length})
             </span>
             <span className="text-slate-400 text-sm">{historyOpen ? '−' : '+'}</span>
@@ -395,7 +395,7 @@ export default function Suggestions({ navigate }) {
       {/* Courses */}
       <Section title="Courses alimentaires" emoji="🛒">
         {/* Comparatif supermarchés */}
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Comparatif supermarchés</p>
+        <p className="text-xs font-semibold text-slate-400 mb-2">Comparatif supermarchés</p>
         <div className="space-y-1.5 mb-4">
           {SUPERMARKETS.filter(s => s.id !== 'autre').map(s => {
             const isCurrent = profile.supermarket === s.id;
@@ -435,7 +435,7 @@ export default function Suggestions({ navigate }) {
             </div>
           ))}
         </div>
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">MDD vs Grande marque</p>
+        <p className="text-xs font-semibold text-slate-400 mb-2">MDD vs Grande marque</p>
         <div className="space-y-2">
           {GROCERY_BRANDS.map(({ product, economic, quality, saving }) => (
             <div key={product} className="flex items-center gap-2 text-sm">

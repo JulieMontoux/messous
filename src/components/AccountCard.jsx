@@ -114,7 +114,7 @@ export default function AccountCard({ email }) {
 
   return (
     <div className="card">
-      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Compte</p>
+      <p className="text-xs font-semibold text-slate-400 mb-3">Compte</p>
       {email && <p className="text-sm text-slate-600 mb-3">Adresse du compte : <strong>{email}</strong></p>}
       {done && <p className="text-sm text-savings font-medium mb-3">✓ Mot de passe modifié</p>}
       <button

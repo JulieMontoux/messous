@@ -35,13 +35,13 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
       collapsed ? 'w-[68px]' : 'w-[220px]'
     )}>
       <div className={cn('flex items-center h-16 px-4 border-b border-slate-100', collapsed ? 'justify-center' : 'gap-3')}>
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
           <TrendingUp size={16} className="text-white" />
         </div>
         {!collapsed && (
           <div>
             <p className="font-bold text-slate-800 text-sm leading-none">MesSous</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">Budget enveloppes</p>
+            <p className="text-xs text-slate-400 mt-0.5">Budget enveloppes</p>
           </div>
         )}
       </div>
@@ -65,7 +65,7 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
               {!collapsed && <span className="flex-1 text-left">{label}</span>}
               {badge && (
                 <span className={cn(
-                  'text-[10px] font-bold bg-warn text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center',
+                  'text-xs font-bold bg-warn text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center',
                   collapsed && 'absolute top-1 right-1'
                 )}>{badge}</span>
               )}
@@ -78,7 +78,7 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
         {!collapsed && profile.firstName && (
           <button onClick={() => onNavigate('settings')} className="w-full text-left px-3 py-2 mb-1 rounded-xl hover:bg-slate-50">
             <p className="text-xs font-semibold text-slate-700 truncate">{profile.firstName}</p>
-            <p className="text-[10px] text-slate-400">Modifier mon profil</p>
+            <p className="text-xs text-slate-400">Modifier mon profil</p>
           </button>
         )}
         <button
@@ -164,7 +164,7 @@ function BottomNav({ page, onNavigate, unclassified }) {
                 )}
               >
                 <Icon size={20} strokeWidth={active ? 2.5 : 2} />
-                <span className="text-[10px] font-medium">{short}</span>
+                <span className="text-xs font-medium">{short}</span>
                 {id === 'bank' && unclassified > 0 && (
                   <span className="absolute top-0.5 right-[calc(50%-18px)] w-2 h-2 rounded-full bg-warn" />
                 )}
@@ -179,7 +179,7 @@ function BottomNav({ page, onNavigate, unclassified }) {
             )}
           >
             <MoreHorizontal size={20} />
-            <span className="text-[10px] font-medium">Plus</span>
+            <span className="text-xs font-medium">Plus</span>
           </button>
         </div>
       </nav>

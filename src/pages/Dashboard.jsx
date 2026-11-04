@@ -10,7 +10,7 @@ import { periodStart, monthKey, previousMonthKey, isLastDayOfMonth, daysInMonth,
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { getTobaccoType } from '../data/defaults';
-import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard, Landmark, Pencil } from 'lucide-react';
+import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard, Landmark, Pencil, ShoppingBag, AlertTriangle } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const MONTH_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -122,7 +122,7 @@ function ForecastCard({ state, dispatch }) {
     <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Fin de mois prévue</p>
+          <p className="text-xs font-semibold text-slate-400">Fin de mois prévue</p>
           {f.forecast != null ? (
             <p className={cn('text-3xl font-bold mt-1', f.forecast < 0 ? 'text-danger' : 'text-slate-800')}>{fmt(f.forecast)}</p>
           ) : (
@@ -157,7 +157,7 @@ function ForecastCard({ state, dispatch }) {
             { label: 'Épargne à verser', value: f.savingsLeft },
           ].map(x => (
             <div key={x.label} className="rounded-xl bg-slate-50 py-2">
-              <p className="text-[10px] text-slate-400 uppercase tracking-wide">{x.label}</p>
+              <p className="text-xs text-slate-400">{x.label}</p>
               <p className="text-sm font-bold text-slate-700">−{fmt(x.value)}</p>
             </div>
           ))}
@@ -233,7 +233,7 @@ function LiveMonthCard({ state, navigate }) {
     <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
       <div className="flex items-start justify-between mb-3">
         <div>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Dépensé ce mois-ci</p>
+          <p className="text-xs font-semibold text-slate-400">Dépensé ce mois-ci</p>
           <p className="text-3xl font-bold text-slate-800 mt-1">{fmt(live.total)}</p>
           <p className="text-xs text-slate-400">sur {fmt(budget)} d'enveloppes</p>
         </div>
@@ -272,7 +272,7 @@ function StatCard({ label, value, sub, color = 'text-slate-800', bg = 'bg-white'
   return (
     <div className={cn('rounded-2xl border border-slate-100 p-5 shadow-sm', bg)}>
       <div className="flex items-start justify-between mb-3">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
+        <p className="text-xs font-semibold text-slate-400">{label}</p>
         {Icon && <Icon size={16} className="text-slate-300" />}
       </div>
       <p className={cn('text-2xl font-bold', color)}>{value}</p>
@@ -316,9 +316,8 @@ export default function Dashboard({ navigate }) {
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm text-slate-400 font-medium">Bonjour {profile.firstName} 👋</p>
-          <h1 className="text-2xl font-bold text-slate-800 mt-0.5">Mon budget</h1>
-          <p className="text-sm text-slate-400 capitalize">{monthLabel}</p>
+          <h1 className="text-2xl font-semibold text-slate-800 capitalize">{monthLabel}</h1>
+          <p className="text-sm text-slate-400 mt-0.5">{profile.firstName}</p>
         </div>
         <div className="flex items-center gap-3">
           {/* View toggle */}
@@ -356,19 +355,19 @@ export default function Dashboard({ navigate }) {
           <TobaccoTile state={state} navigate={navigate} />
 
           {/* Hero card salaire */}
-          <div className="rounded-2xl bg-gradient-to-br from-primary to-primary-dark text-white p-6 shadow-lg">
+          <div className="rounded-2xl bg-slate-800 text-white p-6 shadow-lg">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-primary-light/80 text-xs font-medium uppercase tracking-wide">Salaire net</p>
-                <p className="text-4xl font-bold mt-1">{fmt(display(netSalary))}</p>
-                <p className="text-primary-light/70 text-xs mt-1">{periodLabel}</p>
+                <p className="text-white/60 text-xs font-medium">Salaire net</p>
+                <p className="text-4xl font-semibold mt-1 tabular-nums">{fmt(display(netSalary))}</p>
+                <p className="text-white/50 text-xs mt-1">{periodLabel}</p>
               </div>
               <div className="bg-white/10 rounded-2xl p-3">
                 <TrendingUp size={24} className="text-white" />
               </div>
             </div>
             <div className="mt-5 pt-4 border-t border-white/10 flex items-center justify-between">
-              <span className="text-sm text-primary-light/90">Taux d'épargne</span>
+              <span className="text-sm text-white/70">Taux d'épargne</span>
               <span className="text-lg font-bold">{savRate}%</span>
             </div>
           </div>
@@ -444,7 +443,8 @@ export default function Dashboard({ navigate }) {
               </div>
               {remainder < 0 && (
                 <div className="mt-2 p-3 bg-danger/10 rounded-xl text-xs text-danger font-medium">
-                  ⚠️ Budget prévisionnel en déficit de {fmt(Math.abs(remainder))}/mois — ajuste tes virements ou enveloppes
+                  <AlertTriangle size={12} className="flex-shrink-0 mt-0.5 inline-block mr-1" />
+                  Budget prévisionnel en déficit de {fmt(Math.abs(remainder))}/mois — ajuste tes virements ou enveloppes
                 </div>
               )}
             </div>
@@ -503,9 +503,9 @@ export default function Dashboard({ navigate }) {
             const actualSavAlloc = savingEnv + Math.max(0, remainder);
             const split = idealSplit(profile);
             const rows = [
-              { label: 'Besoins', pct: split.needs, actual: actualNeeds, color: '#3b82f6', type: 'need', icon: '🧾', tip: pctLabel(split.needs) },
-              { label: 'Épargne', pct: split.savings, actual: actualSavAlloc, color: '#10b981', type: 'saving', icon: '🏦', tip: pctLabel(split.savings) },
-              { label: 'Plaisirs', pct: split.wants, actual: actualWants, color: '#8b5cf6', type: 'want', icon: '🎉', tip: pctLabel(split.wants) },
+              { label: 'Besoins', pct: split.needs, actual: actualNeeds, color: '#3b82f6', type: 'need', Icon: Receipt, tip: pctLabel(split.needs) },
+              { label: 'Épargne', pct: split.savings, actual: actualSavAlloc, color: '#10b981', type: 'saving', Icon: PiggyBank, tip: pctLabel(split.savings) },
+              { label: 'Plaisirs', pct: split.wants, actual: actualWants, color: '#8b5cf6', type: 'want', Icon: ShoppingBag, tip: pctLabel(split.wants) },
             ];
             return (
               <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
@@ -514,7 +514,7 @@ export default function Dashboard({ navigate }) {
                   <p className="text-xs text-slate-400 mt-0.5">Base : {fmt(display(afterFixed))}</p>
                 </div>
                 <div className="space-y-4">
-                  {rows.map(({ label, pct, actual, color, type, icon, tip }) => {
+                  {rows.map(({ label, pct, actual, color, type, Icon, tip }) => {
                     const ideal = afterFixed * pct;
                     const diff = actual - ideal;
                     const over = diff > 0;
@@ -527,7 +527,7 @@ export default function Dashboard({ navigate }) {
                     return (
                       <div key={label}>
                         <div className="flex items-center justify-between text-xs mb-1.5">
-                          <span className="font-semibold text-slate-700">{icon} {label}</span>
+                          <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Icon size={12} className="text-slate-400" />{label}</span>
                           <span className="text-slate-400 font-medium">{tip}</span>
                         </div>
                         <div className="flex justify-between text-xs mb-1.5">
@@ -549,12 +549,12 @@ export default function Dashboard({ navigate }) {
                           />
                         </div>
                         {over && !isSaving && topEnv.length > 0 && (
-                          <p className="text-[10px] text-warn mt-1">
+                          <p className="text-xs text-warn mt-1">
                             ↳ {topEnv.map(e => `${e.name} (${fmt(e.budgetMonthly)})`).join(', ')}
                           </p>
                         )}
                         {!over && isSaving && (
-                          <p className="text-[10px] text-slate-400 mt-1">
+                          <p className="text-xs text-slate-400 mt-1">
                             ↳ encore {fmt(display(Math.abs(diff)))} à allouer
                           </p>
                         )}

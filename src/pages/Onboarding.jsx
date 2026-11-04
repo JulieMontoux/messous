@@ -127,7 +127,7 @@ export default function Onboarding() {
   const savings = salary - totalCharges - totalEnv;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 to-primary/10 flex flex-col items-center justify-start px-4 pt-10 pb-8">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-start px-4 pt-10 pb-8">
       <div className="w-full max-w-sm">
         <div className="mb-2 flex items-center justify-between">
           <span className="text-2xl font-bold text-primary">MesSous</span>
@@ -219,7 +219,7 @@ export default function Onboarding() {
             <div className="card space-y-4">
               {[
                 { key: 'hasCar', label: '🚗 J\'ai une voiture', sub: 'Active l\'enveloppe essence' },
-                { key: 'isSmoker', label: '🚬 Je fume', sub: 'Active l\'enveloppe tabac' },
+                { key: 'isSmoker', label: 'Je fume', sub: 'Active l\'enveloppe tabac' },
               ].map(({ key, label, sub }) => (
                 <button
                   key={key}
@@ -238,7 +238,7 @@ export default function Onboarding() {
             </div>
             {profile.isSmoker && (
               <div className="card">
-                <p className="font-medium text-slate-700 mb-3">🚬 Ce que tu fumes</p>
+                <p className="font-medium text-slate-700 mb-3">Ce que tu fumes</p>
                 <TobaccoFields value={profile} onChange={patch => setProfile(p => ({ ...p, ...patch }))} />
               </div>
             )}

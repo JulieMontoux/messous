@@ -76,7 +76,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
 
   return (
     <Modal
-      title="💶 Retrait espèces"
+      title="Retrait espèces"
       onClose={onClose}
       footer={
         <>
@@ -126,8 +126,8 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
       {/* Besoins */}
       {(isIdeal ? idealResult.needsBudget > 0 : needsData.length > 0) && (
         <div className="mb-3">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
-            🧾 Besoins {isIdeal && <span className="normal-case font-normal">(idéal {pctLabel(split.needs)} du disponible)</span>}
+          <p className="text-xs font-semibold text-slate-400 mb-2">
+            Besoins {isIdeal && <span className="normal-case font-normal">(idéal {pctLabel(split.needs)} du disponible)</span>}
           </p>
           {isIdeal ? (
             <div className="flex items-center justify-between">
@@ -170,7 +170,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
       {/* Tabac */}
       {tobaccoBudget > 0 && (
         <div className="mb-3">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">🚬 Tabac</p>
+          <p className="text-xs font-semibold text-slate-400 mb-2">Tabac</p>
           <div className="flex items-center justify-between">
             <div>
               <span className="text-sm text-slate-600">{tobaccoEnv.name}</span>
@@ -188,8 +188,8 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
       {/* Plaisirs */}
       {(isIdeal ? true : wantData.length > 0) && (
         <div className="mb-3">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
-            🎉 Plaisirs {isIdeal && <span className="normal-case font-normal">(idéal {pctLabel(split.wants)} − tabac)</span>}
+          <p className="text-xs font-semibold text-slate-400 mb-2">
+            Plaisirs {isIdeal && <span className="normal-case font-normal">(idéal {pctLabel(split.wants)} − tabac)</span>}
           </p>
           {isIdeal ? (
             <div className="flex items-center justify-between">
@@ -230,8 +230,8 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
       {/* Épargne */}
       {(isIdeal ? savingsIdealBudget > 0 : savingData.length > 0) && (
         <div className="mb-3">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
-            🏦 Épargne {isIdeal && <span className="normal-case font-normal">({pctLabel(split.savings)} du disponible)</span>}
+          <p className="text-xs font-semibold text-slate-400 mb-2">
+            Épargne {isIdeal && <span className="normal-case font-normal">({pctLabel(split.savings)} du disponible)</span>}
           </p>
           {isIdeal ? (
             <div className="flex items-center justify-between">
@@ -273,7 +273,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
       <div className="bg-primary/5 rounded-xl p-4 mt-2">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Total à retirer</p>
+            <p className="text-xs text-slate-500 font-medium">Total à retirer</p>
             <p className="text-xs text-slate-400 mt-0.5">{periodLabel}</p>
           </div>
           <p className="text-3xl font-bold text-primary">{fmt(grandTotal)}</p>
@@ -282,7 +282,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
 
       {/* Enregistrement du retrait réel */}
       <div className="border-t border-slate-100 pt-4 space-y-3">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Enregistrer le retrait</p>
+        <p className="text-xs font-semibold text-slate-400">Enregistrer le retrait</p>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Date</label>
@@ -449,7 +449,7 @@ function WithdrawalsCard({ withdrawals, onDelete }) {
           <div key={w.id} className="flex items-center justify-between py-1.5 text-sm">
             <span className="text-slate-600">
               {formatDay(w.date, { weekday: 'short', day: 'numeric', month: 'short' })}
-              {w.bankTransactionId && <span className="text-[10px] text-slate-400 ml-1.5" title="Retrouvé sur le relevé bancaire">🏦 banque</span>}
+              {w.bankTransactionId && <span className="text-xs text-slate-400 ml-1.5" title="Retrouvé sur le relevé bancaire">🏦 banque</span>}
             </span>
             <span className="flex items-center gap-2">
               {w.suggestedAmount != null && w.suggestedAmount !== w.amount && (
@@ -604,15 +604,15 @@ export default function Envelopes() {
       ) : (
         <div className="space-y-6">
           {[
-            { type: 'need', label: '🧾 Besoins' },
-            { type: 'want', label: '🎉 Envies' },
-            { type: 'saving', label: '🏦 Épargne' },
+            { type: 'need', label: 'Besoins' },
+            { type: 'want', label: 'Envies' },
+            { type: 'saving', label: 'Épargne' },
           ].map(({ type, label }) => {
             const group = envelopes.filter(e => e.type === type);
             if (group.length === 0) return null;
             return (
               <div key={type}>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">{label}</p>
+                <p className="text-xs font-semibold text-slate-400 mb-3">{label}</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                   {group.map(env => (
                     <EnvelopeCard

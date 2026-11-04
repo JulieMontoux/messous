@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { TrendingUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login({ onSwitch, onForgot }) {
@@ -23,10 +24,14 @@ export default function Login({ onSwitch, onForgot }) {
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <p className="text-4xl mb-2">💶</p>
-          <h1 className="text-2xl font-bold text-slate-800">MesSous</h1>
-          <p className="text-sm text-slate-400 mt-1">Connexion à ton compte</p>
+        <div className="flex flex-col items-center mb-8">
+          <div className="flex items-center gap-2.5 mb-2">
+            <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center">
+              <TrendingUp size={16} className="text-white" />
+            </div>
+            <p className="font-semibold text-slate-800 text-lg">MesSous</p>
+          </div>
+          <p className="text-sm text-slate-400">Connexion à ton compte</p>
         </div>
         <form onSubmit={handleSubmit} className="card space-y-4">
           <div>
