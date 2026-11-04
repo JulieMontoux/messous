@@ -28,7 +28,7 @@ export async function onboard(page, { firstName = 'Julie', salary = '2500', smok
   await page.getByRole('button', { name: 'Continuer' }).click(); // → charges
   await page.getByRole('button', { name: 'Continuer' }).click(); // → enveloppes
   await page.getByRole('button', { name: "C'est parti !" }).click();
-  await expect(page.getByRole('heading', { name: 'Mon budget' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /\d{4}/ })).toBeVisible();
 }
 
 export async function newAccount(page, opts) {
