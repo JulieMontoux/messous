@@ -106,7 +106,7 @@ function MigrationScreen({ onDone }) {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <p className="text-5xl mb-3">📦</p>
-          <h1 className="text-2xl font-bold text-slate-800">Données trouvées</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">Données trouvées</h1>
           <p className="text-sm text-slate-400 mt-2">
             On a détecté tes données de l'ancienne version
           </p>

@@ -65,7 +65,7 @@ function GoalCard({ goal, onEdit, onDelete, onDeposit }) {
         </div>
         <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
           <div
-            className="h-full rounded-full transition-all"
+            className="h-full rounded-full transition-[width]"
             style={{
               width: `${pct}%`,
               background: done ? '#22c55e' : pct >= 75 ? '#3b82f6' : pct >= 40 ? '#8b5cf6' : '#6366f1',
@@ -203,7 +203,7 @@ export default function Goals() {
     <div className="pt-6 pb-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Objectifs</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">Objectifs</h1>
           <p className="text-sm text-slate-400 mt-0.5">
             {goals.length > 0 ? `${fmt(totalCurrent)} épargnés sur ${fmt(totalTarget)}` : 'Définis tes projets'}
           </p>
@@ -221,15 +221,15 @@ export default function Goals() {
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="rounded-xl bg-slate-50 py-2">
               <p className="text-xs text-slate-400">Prévu</p>
-              <p className="text-sm font-bold text-slate-700">{fmt(plannedTotal)}/mois</p>
+              <p className="text-sm font-semibold text-slate-700">{fmt(plannedTotal)}/mois</p>
             </div>
             <div className="rounded-xl bg-slate-50 py-2">
               <p className="text-xs text-slate-400">Nécessaire</p>
-              <p className="text-sm font-bold text-slate-700">{fmt(Math.ceil(neededTotal))}/mois</p>
+              <p className="text-sm font-semibold text-slate-700">{fmt(Math.ceil(neededTotal))}/mois</p>
             </div>
             <div className="rounded-xl bg-slate-50 py-2">
               <p className="text-xs text-slate-400">Épargne du budget</p>
-              <p className="text-sm font-bold text-slate-700">{fmt(savingCapacity)}/mois</p>
+              <p className="text-sm font-semibold text-slate-700">{fmt(savingCapacity)}/mois</p>
             </div>
           </div>
           <p className={`text-xs mt-2 ${Math.max(plannedTotal, neededTotal) > savingCapacity ? 'text-warn' : 'text-savings'}`}>
@@ -283,7 +283,7 @@ export default function Goals() {
                 <button
                   key={ic}
                   onClick={() => setForm(f => ({ ...f, icon: ic }))}
-                  className={`w-9 h-9 rounded-xl text-xl flex items-center justify-center transition-all ${form.icon === ic ? 'bg-primary/15 ring-2 ring-primary' : 'bg-slate-100 hover:bg-slate-200'}`}
+                  className={`w-9 h-9 rounded-xl text-xl flex items-center justify-center transition-colors ${form.icon === ic ? 'bg-primary/15 ring-2 ring-primary' : 'bg-slate-100 hover:bg-slate-200'}`}
                 >
                   {ic}
                 </button>
@@ -345,7 +345,7 @@ export default function Goals() {
           <div>
             <label className="label">Montant à ajouter (€)</label>
             <input
-              className="input text-2xl font-bold"
+              className="input text-2xl font-semibold"
               type="number"
               placeholder="0"
               value={depositAmount}

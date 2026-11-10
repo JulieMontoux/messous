@@ -21,7 +21,7 @@ function SpendTile({ label, value, sub, accent = 'text-slate-800' }) {
   return (
     <div className="rounded-xl bg-slate-50 px-3 py-2.5">
       <p className="text-xs font-semibold text-slate-400">{label}</p>
-      <p className={cn('text-lg font-bold', accent)}>{fmt(value)}</p>
+      <p className={cn('text-lg font-semibold', accent)}>{fmt(value)}</p>
       {sub && <p className="text-xs text-slate-400">{sub}</p>}
     </div>
   );
@@ -620,7 +620,7 @@ export default function Bank({ params = {} }) {
       <div className="card">
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-semibold text-slate-700">Dépenses du mois</p>
-          <p className="text-2xl font-bold text-slate-800">{fmt(month.total)}</p>
+          <p className="text-2xl font-semibold text-slate-800">{fmt(month.total)}</p>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <SpendTile label="Carte classée" value={month.cardClassified} sub="dans les enveloppes" />
@@ -647,7 +647,7 @@ export default function Bank({ params = {} }) {
                   <p className="font-medium text-slate-700">{a.name || 'Compte'}</p>
                   {a.iban && <p className="text-xs text-slate-400">{a.iban.replace(/(.{4})/g, '$1 ').trim()}</p>}
                 </div>
-                {a.balance != null && <p className="font-bold text-slate-800">{fmtDec(a.balance)}</p>}
+                {a.balance != null && <p className="font-semibold text-slate-800">{fmtDec(a.balance)}</p>}
               </div>
             ))}
             {status.connections.map(c => (

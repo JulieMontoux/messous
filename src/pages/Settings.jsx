@@ -622,7 +622,7 @@ export default function Settings() {
 
       {/* About */}
       <div className="card text-center py-5">
-        <p className="text-2xl font-bold text-primary">MesSous</p>
+        <p className="text-2xl font-semibold text-primary">MesSous</p>
         <p className="text-xs text-slate-400 mt-1">Budget enveloppes personnel</p>
         <p className="text-xs text-slate-300 mt-3">version {__APP_VERSION__.slice(0, 16).replace('T', ' ')}</p>
       </div>

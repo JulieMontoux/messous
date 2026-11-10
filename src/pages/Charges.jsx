@@ -65,7 +65,7 @@ function ChargeRow({ charge, onEdit, onDelete }) {
         </div>
       </div>
       <div className="text-right flex-shrink-0">
-        <p className="font-bold text-slate-800">{fmt(charge.amount)}</p>
+        <p className="font-semibold text-slate-800">{fmt(charge.amount)}</p>
         {freq !== 'monthly' && <p className="text-xs text-slate-400">{FREQ_SUFFIX[freq]}</p>}
       </div>
       <button onClick={onEdit} className="p-1.5 text-slate-300 hover:text-primary transition-colors">
@@ -146,11 +146,11 @@ export default function Charges() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-500 font-medium">Total mensuel</p>
-            <p className="text-3xl font-bold text-slate-800 mt-1">{fmt(total)}</p>
+            <p className="text-3xl font-semibold text-slate-800 mt-1">{fmt(total)}</p>
           </div>
           <div className="text-right">
             <p className="text-xs text-slate-400">du salaire</p>
-            <p className={`text-2xl font-bold mt-1 ${pctOfSalary > 60 ? 'text-danger' : pctOfSalary > 45 ? 'text-warn' : 'text-fixed'}`}>
+            <p className={`text-2xl font-semibold mt-1 ${pctOfSalary > 60 ? 'text-danger' : pctOfSalary > 45 ? 'text-warn' : 'text-fixed'}`}>
               {pctOfSalary}%
             </p>
           </div>
@@ -158,7 +158,7 @@ export default function Charges() {
         {profile.netSalary > 0 && (
           <div className="mt-3 h-2 bg-slate-100 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${pctOfSalary > 60 ? 'bg-danger' : pctOfSalary > 45 ? 'bg-warn' : 'bg-fixed'}`}
+              className={`h-full rounded-full transition-[width] ${pctOfSalary > 60 ? 'bg-danger' : pctOfSalary > 45 ? 'bg-warn' : 'bg-fixed'}`}
               style={{ width: `${Math.min(100, pctOfSalary)}%` }}
             />
           </div>

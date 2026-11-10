@@ -86,7 +86,7 @@ export default function Advances() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-500 font-medium">On te doit</p>
-            <p className="text-3xl font-bold text-slate-800 mt-1">{fmt(totalOwed)}</p>
+            <p className="text-3xl font-semibold text-slate-800 mt-1">{fmt(totalOwed)}</p>
           </div>
           <span className="text-4xl">🤝</span>
         </div>

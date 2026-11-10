@@ -133,7 +133,7 @@ function CloseMonthModal({ snap, envelopes, transactions, carryovers, onSave, on
       )}
       <div className="bg-savings/5 rounded-xl p-3 flex justify-between items-center">
         <span className="text-sm text-slate-600">Épargne réelle du mois</span>
-        <span className="text-xl font-bold text-savings">{fmt(total)}</span>
+        <span className="text-xl font-semibold text-savings">{fmt(total)}</span>
       </div>
     </Modal>
   );
@@ -161,7 +161,7 @@ function StatCard({ icon: Icon, label, value, sub, color = 'text-savings' }) {
     <div className="card text-center py-4">
       <Icon size={18} className={`${color} mx-auto mb-1`} />
       <p className="text-xs text-slate-400 font-semibold">{label}</p>
-      <p className={`text-xl font-bold mt-1 ${color}`}>{value}</p>
+      <p className={`text-xl font-semibold mt-1 ${color}`}>{value}</p>
       {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
     </div>
   );
@@ -182,7 +182,7 @@ const CustomTooltip = ({ active, payload, label }) => {
       ))}
       <div className="border-t border-slate-100 mt-1.5 pt-1.5 flex justify-between text-xs">
         <span className="text-slate-500">Total planifié</span>
-        <span className="font-bold text-savings">{fmt(total)}</span>
+        <span className="font-semibold text-savings">{fmt(total)}</span>
       </div>
     </div>
   );
@@ -320,7 +320,7 @@ export default function History({ params = {} }) {
                         )}
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-savings">{fmt(real ?? snap.totalSavings)}</p>
+                        <p className="font-semibold text-savings">{fmt(real ?? snap.totalSavings)}</p>
                         {real != null && <p className="text-xs text-slate-400">prévu {fmt(snap.totalSavings)}</p>}
                       </div>
                     </div>
@@ -368,7 +368,7 @@ export default function History({ params = {} }) {
                       <div className="mt-1.5 flex items-center gap-1.5 text-xs">
                         <ArrowUpRight size={12} className="text-emerald-600" />
                         <span className="text-slate-500">Réellement viré :</span>
-                        <span className="font-bold text-emerald-600">{fmt(actualTransferred)}</span>
+                        <span className="font-semibold text-emerald-600">{fmt(actualTransferred)}</span>
                         {snap.totalSavings > 0 && (
                           <span className="text-slate-400">
                             ({Math.round((actualTransferred / snap.totalSavings) * 100)}% du planifié)

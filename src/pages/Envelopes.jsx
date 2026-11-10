@@ -137,7 +137,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
                   <span className="text-xs text-slate-400 ml-1.5">({fmt(needsSpent)} dépensé)</span>
                 )}
               </div>
-              <span className={`font-bold ${needsTotal === 0 ? 'text-slate-400' : 'text-needs'}`}>
+              <span className={`font-semibold ${needsTotal === 0 ? 'text-slate-400' : 'text-needs'}`}>
                 {needsTotal === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(idealResult.needsBudget)}</span>0 €</> : fmt(needsTotal)}
               </span>
             </div>
@@ -160,7 +160,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
               ))}
               <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-1">
                 <span className="text-xs font-semibold text-slate-500">Sous-total</span>
-                <span className="font-bold text-needs">{fmt(needsTotal)}</span>
+                <span className="font-semibold text-needs">{fmt(needsTotal)}</span>
               </div>
             </>
           )}
@@ -178,7 +178,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
                 <span className="text-xs text-slate-400 ml-1.5">({fmt(tobaccoSpent)} dépensé)</span>
               )}
             </div>
-            <span className={`font-bold ${tobaccoToWithdraw === 0 ? 'text-slate-400' : 'text-warn'}`}>
+            <span className={`font-semibold ${tobaccoToWithdraw === 0 ? 'text-slate-400' : 'text-warn'}`}>
               {tobaccoToWithdraw === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(tobaccoBudget)}</span>0 €</> : fmt(tobaccoToWithdraw)}
             </span>
           </div>
@@ -199,7 +199,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
                   <span className="text-xs text-slate-400 ml-1.5">({fmt(wantSpent)} dépensé)</span>
                 )}
               </div>
-              <span className={`font-bold ${pleasuresIdealToWithdraw === 0 ? 'text-slate-400' : 'text-wants'}`}>
+              <span className={`font-semibold ${pleasuresIdealToWithdraw === 0 ? 'text-slate-400' : 'text-wants'}`}>
                 {pleasuresIdealToWithdraw === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(pleasuresIdealBudget)}</span>0 €</> : fmt(pleasuresIdealToWithdraw)}
               </span>
             </div>
@@ -220,7 +220,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
               ))}
               <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-1">
                 <span className="text-xs font-semibold text-slate-500">Sous-total</span>
-                <span className="font-bold text-wants">{fmt(pleasuresTotal)}</span>
+                <span className="font-semibold text-wants">{fmt(pleasuresTotal)}</span>
               </div>
             </>
           )}
@@ -241,7 +241,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
                   <span className="text-xs text-slate-400 ml-1.5">({fmt(savingSpent)} dépensé)</span>
                 )}
               </div>
-              <span className={`font-bold ${savingsIdealToWithdraw === 0 ? 'text-slate-400' : 'text-savings'}`}>
+              <span className={`font-semibold ${savingsIdealToWithdraw === 0 ? 'text-slate-400' : 'text-savings'}`}>
                 {savingsIdealToWithdraw === 0 ? <><span className="line-through text-slate-300 font-normal mr-1.5">{fmt(savingsIdealBudget)}</span>0 €</> : fmt(savingsIdealToWithdraw)}
               </span>
             </div>
@@ -262,7 +262,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
               ))}
               <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-1">
                 <span className="text-xs font-semibold text-slate-500">Sous-total</span>
-                <span className="font-bold text-savings">{fmt(savingsTotal)}</span>
+                <span className="font-semibold text-savings">{fmt(savingsTotal)}</span>
               </div>
             </>
           )}
@@ -276,7 +276,7 @@ function WithdrawalModal({ envelopes, transactions, withdrawals, savingsHistory,
             <p className="text-xs text-slate-500 font-medium">Total à retirer</p>
             <p className="text-xs text-slate-400 mt-0.5">{periodLabel}</p>
           </div>
-          <p className="text-3xl font-bold text-primary">{fmt(grandTotal)}</p>
+          <p className="text-3xl font-semibold text-primary">{fmt(grandTotal)}</p>
         </div>
       </div>
 
@@ -342,7 +342,7 @@ function EnvelopeCard({ env, transactions, viewMode, since, carry = 0, onEdit, o
           <div className="flex items-baseline justify-between gap-2">
             <p className="font-semibold text-slate-800 truncate">{env.name}</p>
             <div className="text-right flex-shrink-0">
-              <span className="text-sm font-bold" style={{ color: over ? '#f43f5e' : colors.ring }}>
+              <span className="text-sm font-semibold" style={{ color: over ? '#f43f5e' : colors.ring }}>
                 {fmt(isSaving ? Math.max(0, remaining) : remaining)}
               </span>
               <span className="text-xs text-slate-400">{isSaving ? ' à verser' : ' restant'}</span>
@@ -360,7 +360,7 @@ function EnvelopeCard({ env, transactions, viewMode, since, carry = 0, onEdit, o
         </div>
         <button
           onClick={onAddTx}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-lg font-bold flex-shrink-0 transition-colors"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-lg font-semibold flex-shrink-0 transition-colors"
           style={{ background: colors.ring }}
           title={isSaving ? 'Ajouter un versement' : 'Ajouter une dépense'}
         >
@@ -369,7 +369,7 @@ function EnvelopeCard({ env, transactions, viewMode, since, carry = 0, onEdit, o
       </div>
 
       <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: over ? '#f43f5e' : colors.ring }} />
+        <div className="h-full rounded-full transition-[width]" style={{ width: `${pct}%`, background: over ? '#f43f5e' : colors.ring }} />
       </div>
 
       {/* Prévision — le mois/la semaine est en cours : on reste zen tant que le budget n'est pas réellement dépassé */}
@@ -435,7 +435,7 @@ function WithdrawalsCard({ withdrawals, onDelete }) {
       <div className="flex items-center justify-between mb-2">
         <p className="text-sm font-semibold text-slate-700 flex items-center gap-2"><Banknote size={16} className="text-savings" /> Retraits réels</p>
         <div className="text-right">
-          <p className="text-lg font-bold text-slate-800">{fmt(total)}</p>
+          <p className="text-lg font-semibold text-slate-800">{fmt(total)}</p>
           <p className="text-[11px] text-slate-400">ce mois · {thisMonth.length} retrait{thisMonth.length !== 1 ? 's' : ''}</p>
         </div>
       </div>
@@ -581,11 +581,11 @@ export default function Envelopes() {
         <div className="card">
           <div className="flex justify-between text-sm mb-2">
             <span className="text-slate-500">Dépensé</span>
-            <span className="font-bold text-slate-800">{fmt(totalSpent)} / {fmt(totalBudget)}</span>
+            <span className="font-semibold text-slate-800">{fmt(totalSpent)} / {fmt(totalBudget)}</span>
           </div>
           <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${totalSpent > totalBudget ? 'bg-danger' : 'bg-primary'}`}
+              className={`h-full rounded-full transition-[width] ${totalSpent > totalBudget ? 'bg-danger' : 'bg-primary'}`}
               style={{ width: `${Math.min(100, totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0)}%` }}
             />
           </div>
@@ -703,7 +703,7 @@ export default function Envelopes() {
           <div>
             <label className="label">Montant (€)</label>
             <input
-              className="input text-2xl font-bold"
+              className="input text-2xl font-semibold"
               type="number"
               placeholder="0.00"
               value={txForm.amount}

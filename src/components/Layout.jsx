@@ -31,7 +31,7 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
 
   return (
     <aside className={cn(
-      'hidden lg:flex flex-col fixed top-0 left-0 h-full bg-white border-r border-slate-100 z-30 transition-all duration-300',
+      'hidden lg:flex flex-col fixed top-0 left-0 h-full bg-white border-r border-slate-100 z-30 transition-[width] duration-200',
       collapsed ? 'w-[68px]' : 'w-[220px]'
     )}>
       <div className={cn('flex items-center h-16 px-4 border-b border-slate-100', collapsed ? 'justify-center' : 'gap-3')}>
@@ -40,7 +40,7 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
         </div>
         {!collapsed && (
           <div>
-            <p className="font-bold text-slate-800 text-sm leading-none">MesSous</p>
+            <p className="font-semibold text-slate-800 text-sm leading-none">MesSous</p>
             <p className="text-xs text-slate-400 mt-0.5">Budget enveloppes</p>
           </div>
         )}
@@ -56,7 +56,7 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
               onClick={() => onNavigate(id)}
               title={collapsed ? label : undefined}
               className={cn(
-                'relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
+                'relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors duration-150',
                 collapsed ? 'justify-center px-2' : '',
                 active ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
               )}
@@ -65,7 +65,7 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
               {!collapsed && <span className="flex-1 text-left">{label}</span>}
               {badge && (
                 <span className={cn(
-                  'text-xs font-bold bg-warn text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center',
+                  'text-xs font-semibold bg-warn text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center',
                   collapsed && 'absolute top-1 right-1'
                 )}>{badge}</span>
               )}
@@ -85,7 +85,7 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
           onClick={logout}
           title={collapsed ? 'Se déconnecter' : undefined}
           className={cn(
-            'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:bg-danger/5 hover:text-danger transition-all duration-150',
+            'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:bg-danger/5 hover:text-danger transition-colors duration-150',
             collapsed ? 'justify-center px-2' : ''
           )}
         >
@@ -225,7 +225,7 @@ export default function Layout({ page, onNavigate, children }) {
       )}
 
       <main className={cn(
-        'min-h-screen transition-all duration-300',
+        'min-h-screen transition-[margin-left] duration-200',
         'pb-[calc(6rem+var(--sab))] lg:pb-8',
         collapsed ? 'lg:ml-[68px]' : 'lg:ml-[220px]'
       )}>
