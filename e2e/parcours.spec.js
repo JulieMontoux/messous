@@ -3,7 +3,7 @@ import { newAccount, register, go, bankCsv, frDate, PASSWORD, uniqueEmail } from
 
 test('inscription, démarrage puis reconnexion', async ({ page }) => {
   const email = await newAccount(page, { firstName: 'Camille' });
-  await expect(page.getByText('Camille')).toBeVisible();
+  await expect(page.getByRole('main').getByText('Camille')).toBeVisible();
 
   // Déconnexion puis connexion : on retrouve son budget (pas l'écran de démarrage)
   await page.getByRole('button', { name: 'Déconnexion' }).click();
@@ -11,7 +11,7 @@ test('inscription, démarrage puis reconnexion', async ({ page }) => {
   await page.getByPlaceholder('julie@exemple.fr').fill(email);
   await page.getByPlaceholder('••••••••').fill(PASSWORD);
   await page.getByRole('button', { name: 'Se connecter' }).click();
-  await expect(page.getByText('Camille')).toBeVisible();
+  await expect(page.getByRole('main').getByText('Camille')).toBeVisible();
 });
 
 test('mauvais mot de passe : message clair, pas de connexion', async ({ page }) => {

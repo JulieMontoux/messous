@@ -57,7 +57,7 @@ test('compte : changer de mot de passe, mot de passe oublié, suppression du com
   await page.getByLabel('Nouveau mot de passe').fill('troisieme-mdp');
   await page.getByLabel('Confirmer').fill('troisieme-mdp');
   await page.getByRole('button', { name: 'Changer le mot de passe' }).click();
-  await expect(page.getByRole('heading', { name: 'Mon budget' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /\d{4}/ })).toBeVisible();
 
   // 3. Suppression du compte
   await go(page, 'settings');
