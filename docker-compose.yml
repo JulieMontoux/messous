@@ -55,7 +55,9 @@ services:
         condition: service_healthy
 
   api:
-    build: ./api
+    build:
+      context: ./api
+      provenance: false
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://messous:${DB_PASSWORD}@db:5432/messous
@@ -91,6 +93,7 @@ services:
       context: .
       args:
         APP_VERSION: ${APP_VERSION:-dev}
+      provenance: false
     restart: unless-stopped
     ports:
       - "${PORT:-80}:8080"
