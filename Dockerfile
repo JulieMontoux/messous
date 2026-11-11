@@ -5,7 +5,7 @@ RUN npm ci
 COPY . .
 ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
-RUN npm run build
+RUN npm run build && find /app/dist/assets -type f \( -name "*.js" -o -name "*.css" \) -exec gzip -k9 {} \;
 
 # nginx sans droits root (écoute sur 8080)
 FROM nginxinc/nginx-unprivileged:alpine
