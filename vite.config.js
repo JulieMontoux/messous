@@ -25,6 +25,16 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/react/') || id.includes('/react-dom/')) return 'vendor';
+          if (id.includes('/lucide-react/')) return 'icons';
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': process.env.VITE_API_TARGET || 'http://localhost:3001',
