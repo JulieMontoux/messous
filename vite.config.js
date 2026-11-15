@@ -25,12 +25,32 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/react/') || id.includes('/react-dom/')) return 'vendor';
+          if (id.includes('/lucide-react/')) return 'icons';
+        },
+      },
+    },
+  },
   server: {
     proxy: {
-      '/api': 'http://localhost:3001',
+      '/api': process.env.VITE_API_TARGET || 'http://localhost:3001',
     },
   },
   test: {
-    environment: 'node',
+    environment: 'jsdom',
+    include: ['src/**/*.test.{js,jsx}'],
+    setupFiles: ['src/test/setup.js'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{js,jsx}'],
+      // Point d'entrée et outillage de test exclus
+      exclude: ['src/main.jsx', 'src/test/**', 'src/**/*.test.{js,jsx}'],
+      reporter: ['text', 'text-summary', 'lcov'],
+      thresholds: { lines: 80, statements: 80, functions: 80, branches: 80, perFile: true },
+    },
   },
 })

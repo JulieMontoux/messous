@@ -14,6 +14,23 @@ services:
       timeout: 5s
       retries: 10
 
+  # Sauvegarde quotidienne de la base dans ./backups (30 jours conservés)
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+      TZ: ${TZ:-Europe/Paris}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+    volumes:
+      - ./backups:/backups
+      - ./deploy/backup/backup-loop.sh:/backup-loop.sh:ro
+    entrypoint: ["/bin/sh", "/backup-loop.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+
   ollama:
     image: ollama/ollama
     restart: unless-stopped
@@ -38,12 +55,14 @@ services:
         condition: service_healthy
 
   api:
-    build: ./api
+    build:
+      context: ./api
+      provenance: false
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://messous:${DB_PASSWORD}@db:5432/messous
       JWT_SECRET: ${JWT_SECRET}
-      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
       PORT: 3001
       TZ: ${TZ:-Europe/Paris}
       APP_URL: ${APP_URL:-http://localhost}
@@ -74,9 +93,10 @@ services:
       context: .
       args:
         APP_VERSION: ${APP_VERSION:-dev}
+      provenance: false
     restart: unless-stopped
     ports:
-      - "${PORT:-80}:80"
+      - "${PORT:-80}:8080"
     depends_on:
       - api
 

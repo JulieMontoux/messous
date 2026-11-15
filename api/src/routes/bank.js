@@ -5,8 +5,11 @@ const auth = require('../middleware/auth');
 const eb = require('../lib/bank/enablebanking');
 const { parseBankCsv } = require('../lib/bank/csv');
 const { merchantKey } = require('../lib/bank/common');
-const { storeTransactions, assignBankTransaction, syncUser, syncConnection } = require('../lib/bank/sync');
+const { suggestTargets } = require('../lib/bank/suggest');
+const { storeTransactions, assignBankTransaction, assignToFixedCharge, assignAsWithdrawal, unlinkWithdrawal, assignAsAdvance, unlinkAdvance, syncUser, syncConnection } = require('../lib/bank/sync');
 const { appUrl } = require('../lib/mailer');
+const { checkEnvelopeAlert } = require('../lib/alerts');
+const { bankHistoryStart } = require('../lib/dates');
 
 const txToClient = r => ({
   id: r.id,
@@ -16,6 +19,10 @@ const txToClient = r => ({
   label: r.label,
   isCard: r.is_card,
   envelopeId: r.envelope_id,
+  fixedChargeId: r.fixed_charge_id || null,
+  withdrawalId: r.withdrawal_id || null,
+  advanceId: r.advance_id || null,
+  advancePerson: r.advance_person || null,
   transactionId: r.transaction_id,
   ignored: r.ignored,
 });
@@ -61,7 +68,7 @@ router.get('/status', async (req, res) => {
     const [conns, accounts, rules] = await Promise.all([
       pool.query('SELECT id, provider, bank_name, status, valid_until, last_sync_at, last_error FROM bank_connections WHERE user_id = $1 ORDER BY created_at DESC', [userId]),
       pool.query('SELECT id, connection_id, name, iban, balance, balance_at FROM bank_accounts WHERE user_id = $1 ORDER BY name', [userId]),
-      pool.query('SELECT r.id, r.pattern, r.envelope_id FROM bank_rules r WHERE r.user_id = $1 ORDER BY r.pattern', [userId]),
+      pool.query('SELECT r.id, r.pattern, r.envelope_id, r.fixed_charge_id FROM bank_rules r WHERE r.user_id = $1 ORDER BY r.pattern', [userId]),
     ]);
     res.json({
       providerConfigured: eb.isConfigured(),
@@ -73,7 +80,7 @@ router.get('/status', async (req, res) => {
         id: a.id, connectionId: a.connection_id, name: a.name, iban: a.iban,
         balance: a.balance != null ? Number(a.balance) : null, balanceAt: a.balance_at,
       })),
-      rules: rules.rows.map(r => ({ id: r.id, pattern: r.pattern, envelopeId: r.envelope_id })),
+      rules: rules.rows.map(r => ({ id: r.id, pattern: r.pattern, envelopeId: r.envelope_id, fixedChargeId: r.fixed_charge_id })),
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -120,22 +127,28 @@ router.post('/sync', async (req, res) => {
 router.post('/import', async (req, res) => {
   try {
     const { csv, accountName = 'Import CSV' } = req.body;
-    const txs = parseBankCsv(csv);
+    // Seulement les opérations depuis le 1er du mois dernier
+    const all = parseBankCsv(csv);
+    const from = bankHistoryStart();
+    const txs = all.filter(t => t.bookingDate >= from);
     const { rows: [acc] } = await pool.query(
       `INSERT INTO bank_accounts (user_id, external_uid, name) VALUES ($1, $2, $3)
        ON CONFLICT (user_id, external_uid) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
       [req.user.userId, `csv:${accountName}`, accountName]
     );
     const r = await storeTransactions(req.user.userId, acc.id, txs);
-    res.json({ parsed: txs.length, ...r });
+    res.json({ parsed: all.length, skipped: all.length - txs.length, from, ...r });
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
 router.get('/transactions', async (req, res) => {
   try {
-    const from = req.query.from || new Date(Date.now() - 62 * 86400000).toISOString().slice(0, 10);
+    const from = req.query.from || bankHistoryStart();
     const { rows } = await pool.query(
-      'SELECT * FROM bank_transactions WHERE user_id = $1 AND booking_date >= $2 ORDER BY booking_date DESC, created_at DESC',
+      `SELECT b.*, w.id AS withdrawal_id, a.id AS advance_id, a.person AS advance_person FROM bank_transactions b
+       LEFT JOIN withdrawals w ON w.bank_transaction_id = b.id
+       LEFT JOIN advances a ON a.bank_transaction_id = b.id
+       WHERE b.user_id = $1 AND b.booking_date >= $2 ORDER BY b.booking_date DESC, b.created_at DESC`,
       [req.user.userId, from]
     );
     res.json(rows.map(txToClient));
@@ -144,27 +157,118 @@ router.get('/transactions', async (req, res) => {
 
 router.post('/transactions/:id/assign', async (req, res) => {
   try {
-    const { envelopeId, remember = false } = req.body;
-    const { rows: [env] } = await pool.query('SELECT id FROM envelopes WHERE id = $1 AND user_id = $2', [envelopeId, req.user.userId]);
-    if (!env) return res.status(400).json({ error: 'Enveloppe introuvable' });
-    const tx = await assignBankTransaction(req.user.userId, req.params.id, envelopeId);
+    const { envelopeId = null, fixedChargeId = null, asWithdrawal = false, advance = null, remember = false } = req.body;
+    const userId = req.user.userId;
+    let tx = null;
+    if (advance) {
+      await assignAsAdvance(userId, req.params.id, advance);
+      return res.json({ transaction: null });
+    }
+    if (asWithdrawal) {
+      await assignAsWithdrawal(userId, req.params.id);
+      return res.json({ transaction: null });
+    }
+    if (fixedChargeId) {
+      const { rows: [fc] } = await pool.query('SELECT id FROM fixed_charges WHERE id = $1 AND user_id = $2', [fixedChargeId, userId]);
+      if (!fc) return res.status(400).json({ error: 'Charge fixe introuvable' });
+      await assignToFixedCharge(userId, req.params.id, fixedChargeId);
+    } else {
+      const { rows: [env] } = await pool.query('SELECT id FROM envelopes WHERE id = $1 AND user_id = $2', [envelopeId, userId]);
+      if (!env) return res.status(400).json({ error: 'Enveloppe introuvable' });
+      tx = await assignBankTransaction(userId, req.params.id, envelopeId);
+    }
     if (remember) {
       const { rows: [btx] } = await pool.query('SELECT label FROM bank_transactions WHERE id = $1', [req.params.id]);
       const pattern = merchantKey(btx.label);
       if (pattern) {
         await pool.query(
-          `INSERT INTO bank_rules (user_id, pattern, envelope_id) VALUES ($1, $2, $3)
-           ON CONFLICT (user_id, pattern) DO UPDATE SET envelope_id = EXCLUDED.envelope_id`,
-          [req.user.userId, pattern, envelopeId]
+          `INSERT INTO bank_rules (user_id, pattern, envelope_id, fixed_charge_id) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (user_id, pattern) DO UPDATE SET envelope_id = EXCLUDED.envelope_id, fixed_charge_id = EXCLUDED.fixed_charge_id`,
+          [userId, pattern, fixedChargeId ? null : envelopeId, fixedChargeId]
         );
       }
     }
     res.json({
-      transaction: {
+      transaction: tx && {
         id: tx.id, envelopeId: tx.envelope_id, amount: Number(tx.amount), note: tx.note,
         date: tx.date, paymentMethod: tx.payment_method, bankTransactionId: tx.bank_transaction_id,
       },
     });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+});
+
+// Suggestions de classement (mots-clés puis IA locale) pour les opérations à classer
+router.post('/suggest', async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { ids, useAi = true } = req.body || {};
+    const [envs, charges, todo] = await Promise.all([
+      pool.query('SELECT id, name, category_id FROM envelopes WHERE user_id = $1', [userId]),
+      pool.query("SELECT id, name, category_id FROM fixed_charges WHERE user_id = $1 AND (end_month IS NULL OR end_month >= TO_CHAR(NOW(), 'YYYY-MM'))", [userId]),
+      pool.query(
+        `SELECT b.id, b.label FROM bank_transactions b
+         WHERE b.user_id = $1 AND b.amount < 0 AND b.ignored = false AND b.envelope_id IS NULL AND b.fixed_charge_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM withdrawals w WHERE w.bank_transaction_id = b.id)
+           AND NOT EXISTS (SELECT 1 FROM advances a WHERE a.bank_transaction_id = b.id)
+           AND ($2::uuid[] IS NULL OR b.id = ANY($2::uuid[]))
+         ORDER BY b.booking_date DESC LIMIT 200`,
+        [userId, Array.isArray(ids) && ids.length ? ids : null]
+      ),
+    ]);
+    res.json(await suggestTargets(todo.rows, envs.rows, charges.rows, { useAi }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Classement en masse : { ids, envelopeId | fixedChargeId | ignore, remember }
+router.post('/transactions/bulk', async (req, res) => {
+  try {
+    const { ids = [], envelopeId = null, fixedChargeId = null, asWithdrawal = false, ignore = false, remember = false } = req.body;
+    const userId = req.user.userId;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Aucune opération sélectionnée' });
+    if (!ignore && !asWithdrawal && !envelopeId && !fixedChargeId) return res.status(400).json({ error: 'Destination requise' });
+    if (fixedChargeId) {
+      const { rows } = await pool.query('SELECT id FROM fixed_charges WHERE id = $1 AND user_id = $2', [fixedChargeId, userId]);
+      if (!rows.length) return res.status(400).json({ error: 'Charge fixe introuvable' });
+    } else if (envelopeId) {
+      const { rows } = await pool.query('SELECT id FROM envelopes WHERE id = $1 AND user_id = $2', [envelopeId, userId]);
+      if (!rows.length) return res.status(400).json({ error: 'Enveloppe introuvable' });
+    }
+    const { rows: btxs } = await pool.query(
+      'SELECT id, label, transaction_id, booking_date FROM bank_transactions WHERE user_id = $1 AND id = ANY($2::uuid[]) AND amount < 0',
+      [userId, ids]
+    );
+    for (const b of btxs) {
+      if (asWithdrawal) {
+        await assignAsWithdrawal(userId, b.id);
+      } else if (ignore) {
+        if (b.transaction_id) await pool.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [b.transaction_id, userId]);
+        await unlinkWithdrawal(userId, b.id);
+        await pool.query(
+          'UPDATE bank_transactions SET ignored = true, envelope_id = NULL, fixed_charge_id = NULL, transaction_id = NULL WHERE id = $1',
+          [b.id]
+        );
+      } else if (fixedChargeId) {
+        await assignToFixedCharge(userId, b.id, fixedChargeId);
+      } else {
+        await assignBankTransaction(userId, b.id, envelopeId, { alert: false });
+      }
+    }
+    // Une seule vérification d'alerte, et seulement si la sélection contient une dépense du mois en cours
+    if (envelopeId && !ignore) {
+      const latest = btxs.map(b => b.booking_date).sort().pop();
+      checkEnvelopeAlert(userId, envelopeId, latest).catch(err => console.error('[alert]', err.message));
+    }
+    if (remember && !ignore && !asWithdrawal) {
+      const patterns = [...new Set(btxs.map(b => merchantKey(b.label)).filter(Boolean))];
+      for (const pattern of patterns) {
+        await pool.query(
+          `INSERT INTO bank_rules (user_id, pattern, envelope_id, fixed_charge_id) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (user_id, pattern) DO UPDATE SET envelope_id = EXCLUDED.envelope_id, fixed_charge_id = EXCLUDED.fixed_charge_id`,
+          [userId, pattern, fixedChargeId ? null : envelopeId, fixedChargeId]
+        );
+      }
+    }
+    res.json({ updated: btxs.length });
   } catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
@@ -173,7 +277,9 @@ router.post('/transactions/:id/unassign', async (req, res) => {
     const { rows: [btx] } = await pool.query('SELECT * FROM bank_transactions WHERE id = $1 AND user_id = $2', [req.params.id, req.user.userId]);
     if (!btx) return res.status(404).json({ error: 'Not found' });
     if (btx.transaction_id) await pool.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [btx.transaction_id, req.user.userId]);
-    await pool.query('UPDATE bank_transactions SET envelope_id = NULL, transaction_id = NULL WHERE id = $1', [btx.id]);
+    await pool.query('UPDATE bank_transactions SET envelope_id = NULL, transaction_id = NULL, fixed_charge_id = NULL WHERE id = $1', [btx.id]);
+    await unlinkWithdrawal(req.user.userId, btx.id);
+    await unlinkAdvance(req.user.userId, btx.id);
     res.json({ ok: true, removedTransactionId: btx.transaction_id });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -182,6 +288,10 @@ router.post('/transactions/:id/ignore', async (req, res) => {
   try {
     const { ignored = true } = req.body;
     await pool.query('UPDATE bank_transactions SET ignored = $3 WHERE id = $1 AND user_id = $2', [req.params.id, req.user.userId, !!ignored]);
+    if (ignored) {
+      await unlinkWithdrawal(req.user.userId, req.params.id);
+      await unlinkAdvance(req.user.userId, req.params.id);
+    }
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

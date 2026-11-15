@@ -34,11 +34,11 @@ function TobaccoSection({ profile, navigate }) {
       </div>
       <div className="grid grid-cols-2 gap-3 mb-3">
         <div className="rounded-xl bg-warn/5 border border-warn/20 p-3 text-center">
-          <p className="text-lg font-bold text-warn">{fmt(monthly)}</p>
+          <p className="text-lg font-semibold text-warn">{fmt(monthly)}</p>
           <p className="text-xs text-slate-400">/ mois</p>
         </div>
         <div className="rounded-xl bg-danger/5 border border-danger/20 p-3 text-center">
-          <p className="text-lg font-bold text-danger">{fmt(yearly)}</p>
+          <p className="text-lg font-semibold text-danger">{fmt(yearly)}</p>
           <p className="text-xs text-slate-400">/ an</p>
         </div>
       </div>
@@ -66,7 +66,7 @@ function TobaccoSection({ profile, navigate }) {
                 {tip && <p className="text-xs text-slate-400">{tip}</p>}
               </div>
               <div className="text-right">
-                <p className="font-bold text-slate-800">{fmtDec(p)}</p>
+                <p className="font-semibold text-slate-800">{fmtDec(p)}</p>
                 <p className="text-xs text-slate-400">/paquet</p>
               </div>
             </div>
@@ -109,7 +109,7 @@ function AdviceList({ text }) {
     <ol className="space-y-3">
       {lines.map((line, i) => (
         <li key={i} className="flex gap-3 items-start">
-          <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+          <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center flex-shrink-0 mt-0.5">
             {i + 1}
           </span>
           <p className="text-sm text-slate-600 leading-relaxed">{line}</p>
@@ -253,7 +253,7 @@ function AiSection() {
             onClick={() => setHistoryOpen(o => !o)}
             className="flex items-center justify-between w-full text-left"
           >
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+            <span className="text-xs font-semibold text-slate-400">
               Historique ({history.length})
             </span>
             <span className="text-slate-400 text-sm">{historyOpen ? '−' : '+'}</span>
@@ -360,7 +360,7 @@ export default function Suggestions({ navigate }) {
                   <p className="text-xs text-slate-400">{note}</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-slate-800">
+                  <p className="font-semibold text-slate-800">
                     {price != null ? fmtDec(price) : '—'}
                   </p>
                   <p className="text-xs text-slate-400">/L</p>
@@ -395,7 +395,7 @@ export default function Suggestions({ navigate }) {
       {/* Courses */}
       <Section title="Courses alimentaires" emoji="🛒">
         {/* Comparatif supermarchés */}
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Comparatif supermarchés</p>
+        <p className="text-xs font-semibold text-slate-400 mb-2">Comparatif supermarchés</p>
         <div className="space-y-1.5 mb-4">
           {SUPERMARKETS.filter(s => s.id !== 'autre').map(s => {
             const isCurrent = profile.supermarket === s.id;
@@ -435,7 +435,7 @@ export default function Suggestions({ navigate }) {
             </div>
           ))}
         </div>
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">MDD vs Grande marque</p>
+        <p className="text-xs font-semibold text-slate-400 mb-2">MDD vs Grande marque</p>
         <div className="space-y-2">
           {GROCERY_BRANDS.map(({ product, economic, quality, saving }) => (
             <div key={product} className="flex items-center gap-2 text-sm">

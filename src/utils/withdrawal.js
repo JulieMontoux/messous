@@ -1,17 +1,21 @@
 import { weeklyAmount, spentInPeriod } from './budget';
 
 const round5 = v => Math.round(v / 5) * 5;
-const roundUp5 = v => Math.ceil(v / 5) * 5;
+// Les distributeurs ne donnent pas de billets de 5 € : par défaut, tout montant à retirer est
+// arrondi à la dizaine supérieure (17 → 20). Désactivable dans le profil → euro supérieur.
+export function roundUpTo(v, step) {
+  return Math.ceil(Math.round(v * 100) / 100 / step) * step;
+}
 
 function toBudget(monthly, mode) {
   return round5(mode === 'weekly' ? weeklyAmount(monthly) : monthly);
 }
 
-function withSpending(envList, transactions, mode, opts) {
+function withSpending(envList, transactions, mode, opts, roundUpBill) {
   return envList.map(e => {
     const budget = toBudget(e.budgetMonthly, mode);
     const spent = spentInPeriod(transactions, e.id, mode, opts);
-    return { ...e, budget, spent, toWithdraw: Math.max(0, budget - spent) };
+    return { ...e, budget, spent, toWithdraw: roundUpBill(Math.max(0, budget - spent)) };
   });
 }
 
@@ -22,16 +26,17 @@ export function cashInHand(withdrawn, cashSpent) {
 
 // opts.since : début de période · withdrawn : total réellement retiré depuis ce début.
 // Le montant à retirer = budget − dépenses (carte + espèces) − espèces encore en poche.
-export function computeWithdrawal({ envelopes, transactions, mode, idealNeeds, idealWants, idealSavings, withdrawn = 0, since }) {
+export function computeWithdrawal({ envelopes, transactions, mode, idealNeeds, idealWants, idealSavings, withdrawn = 0, since, roundToTen = true }) {
   const opts = since ? { since } : {};
+  const roundUpBill = v => roundUpTo(v, roundToTen ? 10 : 1);
   const tobaccoEnv = envelopes.find(e => e.categoryId === 'tobacco');
   const needEnvs = envelopes.filter(e => e.type === 'need');
   const wantEnvs = envelopes.filter(e => e.type === 'want' && e.categoryId !== 'tobacco');
   const savingEnvs = envelopes.filter(e => e.type === 'saving');
 
-  const needsData = withSpending(needEnvs, transactions, mode, opts);
-  const wantData = withSpending(wantEnvs, transactions, mode, opts);
-  const savingData = withSpending(savingEnvs, transactions, mode, opts);
+  const needsData = withSpending(needEnvs, transactions, mode, opts, roundUpBill);
+  const wantData = withSpending(wantEnvs, transactions, mode, opts, roundUpBill);
+  const savingData = withSpending(savingEnvs, transactions, mode, opts, roundUpBill);
 
   const tobaccoBudget = tobaccoEnv ? toBudget(tobaccoEnv.budgetMonthly, mode) : 0;
   const tobaccoSpent = tobaccoEnv ? spentInPeriod(transactions, tobaccoEnv.id, mode, opts) : 0;
@@ -40,13 +45,13 @@ export function computeWithdrawal({ envelopes, transactions, mode, idealNeeds, i
     ? envelopes.reduce((s, e) => s + spentInPeriod(transactions, e.id, mode, { ...opts, method: 'cash' }), 0)
     : 0;
   const inHand = cashInHand(withdrawn, cashSpent);
-  const tobaccoToWithdraw = Math.max(0, tobaccoBudget - tobaccoSpent);
+  const tobaccoToWithdraw = roundUpBill(Math.max(0, tobaccoBudget - tobaccoSpent));
 
   // Envelope mode
   const envNeedsTotal = needsData.reduce((s, e) => s + e.toWithdraw, 0);
   const envWantsTotal = wantData.reduce((s, e) => s + e.toWithdraw, 0);
   const envSavingsTotal = savingData.reduce((s, e) => s + e.toWithdraw, 0);
-  const envGrandTotal = roundUp5(Math.max(0, envNeedsTotal + tobaccoToWithdraw + envWantsTotal + envSavingsTotal - inHand));
+  const envGrandTotal = roundUpBill(Math.max(0, envNeedsTotal + tobaccoToWithdraw + envWantsTotal + envSavingsTotal - inHand));
 
   // Ideal mode — spending-aware per group
   const needsSpent = needsData.reduce((s, e) => s + e.spent, 0);
@@ -57,10 +62,10 @@ export function computeWithdrawal({ envelopes, transactions, mode, idealNeeds, i
   const idealWantsBudget = Math.max(toBudget(50, mode), toBudget(idealWants, mode) - tobaccoBudget);
   const idealSavingsBudget = toBudget(idealSavings, mode);
 
-  const idealNeedsToWithdraw = Math.max(0, idealNeedsBudget - needsSpent);
-  const idealWantsToWithdraw = Math.max(0, idealWantsBudget - wantSpent);
-  const idealSavingsToWithdraw = Math.max(0, idealSavingsBudget - savingSpent);
-  const idealGrandTotal = roundUp5(Math.max(0, idealNeedsToWithdraw + tobaccoToWithdraw + idealWantsToWithdraw + idealSavingsToWithdraw - inHand));
+  const idealNeedsToWithdraw = roundUpBill(Math.max(0, idealNeedsBudget - needsSpent));
+  const idealWantsToWithdraw = roundUpBill(Math.max(0, idealWantsBudget - wantSpent));
+  const idealSavingsToWithdraw = roundUpBill(Math.max(0, idealSavingsBudget - savingSpent));
+  const idealGrandTotal = roundUpBill(Math.max(0, idealNeedsToWithdraw + tobaccoToWithdraw + idealWantsToWithdraw + idealSavingsToWithdraw - inHand));
 
   return {
     withdrawn,

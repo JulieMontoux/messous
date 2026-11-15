@@ -4,11 +4,23 @@ import {
   fmt, totalFixedExSavings, totalProgrammedSavings,
   totalExpenseEnvelopes, totalSavingEnvelopesBudget,
   computedSavings, totalSavings, budgetHealth, HEALTH_CONFIG, donutData, weeklyAmount,
-  realSpending, envelopeForecast, periodDaysFor, BUDGET_RULES, budgetRuleBreakdown,
+  realSpending, envelopeForecast, periodDaysFor, idealSplit, carryoverFor, monthEndForecast, fmtDec, tobaccoStats,
+  BUDGET_RULES, budgetRuleBreakdown,
 } from '../utils/budget';
-import { periodStart, monthKey, previousMonthKey, isLastDayOfMonth, daysInMonth } from '../utils/period';
-import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard } from 'lucide-react';
+import { periodStart, monthKey, previousMonthKey, isLastDayOfMonth, daysInMonth, addDays, toLocalDate, formatDay } from '../utils/period';
+import { useEffect, useState } from 'react';
+import { api } from '../api/client';
+import { getTobaccoType } from '../data/defaults';
+import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard, Landmark, Pencil, ShoppingBag, AlertTriangle, Briefcase, Leaf, Flame, Banknote, Check, Pin, House, Plane, HandCoins, Heart, BookOpen, Umbrella, Hourglass, NotebookPen } from 'lucide-react';
 import { cn } from '../lib/utils';
+
+// Icône de chaque ligne du « Budget idéal » (clés de BUDGET_RULES)
+const RULE_ROW_ICONS = {
+  needs: Receipt, essentials: Receipt, committed: Receipt, survival: Receipt, fixed: Pin,
+  wants: ShoppingBag, pleasure: ShoppingBag, fun: ShoppingBag, play: ShoppingBag, leisure: ShoppingBag, spending: CreditCard,
+  living: House, travel: Plane, debts: HandCoins, give: Heart, education: BookOpen, culture: BookOpen, unexpected: Umbrella,
+  savings: PiggyBank, shortTerm: PiggyBank, longTerm: TrendingUp, freedom: TrendingUp, retirement: Hourglass,
+};
 
 const MONTH_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
@@ -31,12 +43,185 @@ function MonthCloseBanner({ savingsHistory, navigate }) {
       <CalendarCheck size={20} className="text-savings flex-shrink-0" />
       <div className="flex-1">
         <p className="text-sm font-semibold text-slate-700">
-          {month === monthKey(now) ? `Dernier jour de ${label} 🐷` : `Clôture ${label}`}
+          {month === monthKey(now) ? `Dernier jour de ${label}` : `Clôture ${label}`}
         </p>
         <p className="text-xs text-slate-500">Enregistre ton épargne réelle et ce qu'il reste sur le compte</p>
       </div>
       <ChevronRight size={16} className="text-slate-400" />
     </button>
+  );
+}
+
+const SALARY_RE = /SALAIRE|\bPAIE\b|REMUNERATION|\bSAL\b/i;
+const DISMISS_KEY = 'messous_salary_dismissed';
+
+function readDismissed() {
+  try { return localStorage.getItem(DISMISS_KEY); } catch { return null; }
+}
+
+// Virement de salaire repéré sur le relevé (40 derniers jours) différent du salaire du profil
+function SalaryDetectedBanner({ state, dispatch }) {
+  const [dismissed, setDismissed] = useState(readDismissed);
+  const since = addDays(toLocalDate(), -40);
+  const credit = state.bankTransactions
+    .filter(b => b.amount > 0 && b.date >= since && SALARY_RE.test(b.label || ''))
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (!credit || credit.id === dismissed || Math.abs(credit.amount - state.profile.netSalary) < 1) return null;
+
+  function dismiss() {
+    try { localStorage.setItem(DISMISS_KEY, credit.id); } catch { /* stockage indisponible */ }
+    setDismissed(credit.id);
+  }
+
+  async function apply() {
+    const updated = await api.put('/api/profile/salary', { amount: credit.amount, from: monthKey() });
+    dispatch({ type: 'SET_PROFILE', payload: updated });
+    dismiss();
+  }
+
+  return (
+    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex flex-wrap items-center gap-3">
+      <Briefcase size={18} className="text-primary/70 flex-shrink-0" />
+      <div className="flex-1 min-w-[200px]">
+        <p className="text-sm font-semibold text-slate-700">Salaire reçu le {formatDay(credit.date)} : {fmt(credit.amount)}</p>
+        <p className="text-xs text-slate-500">Ton profil indique {fmt(state.profile.netSalary)}. Mettre à jour pour ce mois-ci ?</p>
+      </div>
+      <div className="flex gap-2">
+        <button className="btn-secondary text-xs py-1.5" onClick={dismiss}>Ignorer</button>
+        <button className="btn-primary text-xs py-1.5" onClick={apply}>Mettre à jour</button>
+      </div>
+    </div>
+  );
+}
+
+// Solde prévisionnel de fin de mois + calendrier des prélèvements à venir.
+// Solde : comptes bancaires connectés, sinon solde saisi à la main.
+function ForecastCard({ state, dispatch }) {
+  const [accounts, setAccounts] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    api.get('/api/bank/status').then(s => setAccounts(s.accounts || [])).catch(() => setAccounts([]));
+  }, []);
+
+  const withBalance = (accounts || []).filter(a => a.balance != null);
+  const bankBalance = withBalance.length ? withBalance.reduce((s, a) => s + a.balance, 0) : null;
+  const balance = bankBalance ?? state.profile.manualBalance ?? null;
+  const f = monthEndForecast({
+    balance,
+    charges: state.fixedCharges,
+    envelopes: state.envelopes,
+    transactions: state.transactions,
+    carryovers: state.carryovers,
+    withdrawals: state.withdrawals,
+  });
+  const now = new Date();
+  const lastDay = daysInMonth(now);
+
+  async function saveBalance() {
+    const updated = await api.put('/api/profile/balance', { balance: draft === '' ? null : Number(draft) });
+    dispatch({ type: 'SET_PROFILE', payload: updated });
+    setEditing(false);
+  }
+
+  if (accounts === null) return null;
+
+  return (
+    <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <p className="text-xs font-medium text-slate-400">Fin de mois prévue</p>
+          {f.forecast != null ? (
+            <p className={cn('text-3xl font-semibold tabular-nums mt-1', f.forecast < 0 ? 'text-danger' : 'text-slate-800')}>{fmt(f.forecast)}</p>
+          ) : (
+            <p className="text-sm text-slate-500 mt-1">Indique ton solde pour voir la prévision</p>
+          )}
+          <p className="text-xs text-slate-400">le {lastDay} {MONTH_LONG[now.getMonth()]}, hors salaire et revenus à venir</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-slate-400 flex items-center gap-1 justify-end"><Landmark size={12} /> Solde {bankBalance != null ? 'banque' : 'saisi'}</p>
+          {editing ? (
+            <div className="flex gap-1 mt-1">
+              <input className="input py-1 w-28 text-sm" type="number" value={draft} onChange={e => setDraft(e.target.value)} autoFocus />
+              <button className="btn-primary text-xs px-2 py-1" onClick={saveBalance}>OK</button>
+            </div>
+          ) : (
+            <button
+              className="text-lg font-semibold tabular-nums text-slate-700 flex items-center gap-1 ml-auto disabled:cursor-default"
+              disabled={bankBalance != null}
+              onClick={() => { setDraft(balance ?? ''); setEditing(true); }}
+            >
+              {balance != null ? fmtDec(balance) : 'Saisir'}
+              {bankBalance == null && <Pencil size={12} className="text-slate-400" />}
+            </button>
+          )}
+        </div>
+      </div>
+      {f.forecast != null && (
+        <div className="grid grid-cols-3 gap-2 text-center mb-3">
+          {[
+            { label: 'Prélèvements', value: f.chargesLeft },
+            { label: 'Enveloppes', value: f.envelopesLeft },
+            { label: 'Épargne à verser', value: f.savingsLeft },
+          ].map(x => (
+            <div key={x.label} className="rounded-xl bg-slate-50 py-2">
+              <p className="text-xs text-slate-400">{x.label}</p>
+              <p className="text-sm font-semibold tabular-nums text-slate-700">−{fmt(x.value)}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {f.upcoming.length > 0 ? (
+        <div>
+          <p className="text-xs font-medium text-slate-500 mb-1.5">Prélèvements à venir</p>
+          <div className="space-y-1">
+            {f.upcoming.map(c => (
+              <div key={c.id} className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-semibold text-slate-400 w-12 flex-shrink-0">{c.dueDay ? `le ${c.dueDay}` : 'ce mois'}</span>
+                  <span className="text-slate-600 truncate">{c.name}</span>
+                </span>
+                <span className="font-semibold text-slate-700 flex-shrink-0">{fmt(c.amount)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-savings flex items-center gap-1"><Check size={12} />Toutes les charges fixes du mois sont passées</p>
+      )}
+    </div>
+  );
+}
+
+// Tabac : achats du mois, ou compteur d'arrêt
+function TobaccoTile({ state, navigate }) {
+  const { profile } = state;
+  if (!profile.isSmoker && !profile.tobaccoQuitDate) return null;
+  const s = tobaccoStats({ profile, envelopes: state.envelopes, transactions: state.transactions });
+  const unit = getTobaccoType(profile.tobaccoType);
+  if (s.quit) {
+    return (
+      <button onClick={() => navigate('settings')} className="w-full text-left rounded-2xl border border-savings/30 bg-savings/5 p-4 flex items-center gap-3">
+        <Leaf size={18} className="text-savings flex-shrink-0" />
+        <div>
+          <p className="text-sm font-semibold text-slate-700">{s.quit.days} jour{s.quit.days > 1 ? 's' : ''} sans tabac</p>
+          <p className="text-xs text-slate-500">{fmt(s.quit.saved)} économisés · {s.quit.unitsAvoided} {s.quit.unitsAvoided > 1 ? unit.unitPlural : unit.unit} évité{s.quit.unitsAvoided > 1 ? 's' : ''}</p>
+        </div>
+      </button>
+    );
+  }
+  if (!s.spentMonth) return null;
+  const units = Math.round(s.unitsMonth * 10) / 10;
+  const expected = Math.round(s.expectedSoFar * 10) / 10;
+  return (
+    <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-4 flex items-center gap-3">
+      <Flame size={18} className="text-slate-400 flex-shrink-0" />
+      <div className="flex-1">
+        <p className="text-sm font-semibold text-slate-700">≈ {units} {units > 1 ? unit.unitPlural : unit.unit} ce mois-ci</p>
+        <p className="text-xs text-slate-400">{fmt(s.spentMonth)} · rythme prévu à date : {expected}</p>
+      </div>
+    </div>
   );
 }
 
@@ -47,7 +232,8 @@ function LiveMonthCard({ state, navigate }) {
   const now = new Date();
   const since = periodStart('monthly');
   const live = realSpending({ transactions, envelopes, bankTransactions, since });
-  const budget = totalExpenseEnvelopes(envelopes);
+  const budget = totalExpenseEnvelopes(envelopes)
+    + envelopes.filter(e => e.type !== 'saving').reduce((s, e) => s + carryoverFor(state.carryovers, e.id), 0);
   const forecast = envelopeForecast({ budget, spent: live.total, since, periodDays: periodDaysFor('monthly') });
   const pct = budget > 0 ? Math.min(100, (live.total / budget) * 100) : 0;
   const dayPct = (now.getDate() / daysInMonth(now)) * 100;
@@ -56,17 +242,17 @@ function LiveMonthCard({ state, navigate }) {
     <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
       <div className="flex items-start justify-between mb-3">
         <div>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Dépensé ce mois-ci</p>
-          <p className="text-3xl font-bold text-slate-800 mt-1">{fmt(live.total)}</p>
+          <p className="text-xs font-medium text-slate-400">Dépensé ce mois-ci</p>
+          <p className="text-3xl font-semibold tabular-nums text-slate-800 mt-1">{fmt(live.total)}</p>
           <p className="text-xs text-slate-400">sur {fmt(budget)} d'enveloppes</p>
         </div>
         <div className="text-right">
-          <p className={cn('text-lg font-bold', forecast.remaining < 0 ? 'text-danger' : 'text-savings')}>{fmt(forecast.remaining)}</p>
+          <p className={cn('text-lg font-semibold tabular-nums', forecast.remaining < 0 ? 'text-danger' : 'text-savings')}>{fmt(forecast.remaining)}</p>
           <p className="text-xs text-slate-400">restant · {forecast.daysLeft} j</p>
         </div>
       </div>
       <div className="relative h-2.5 bg-slate-100 rounded-full overflow-hidden">
-        <div className={cn('h-full rounded-full transition-all', forecast.status === 'over' ? 'bg-danger' : 'bg-primary')} style={{ width: `${pct}%` }} />
+        <div className={cn('h-full rounded-full transition-[width]', forecast.status === 'over' ? 'bg-danger' : 'bg-primary')} style={{ width: `${pct}%` }} />
         <div className="absolute top-0 bottom-0 w-0.5 bg-slate-400/60" style={{ left: `${dayPct}%` }} title="Aujourd'hui" />
       </div>
       <p className={cn('text-xs mt-2', forecast.status === 'over' ? 'text-danger' : forecast.status === 'pace' ? 'text-warn' : 'text-slate-500')}>
@@ -75,12 +261,12 @@ function LiveMonthCard({ state, navigate }) {
           : forecast.status === 'pace'
             ? `Rythme un peu soutenu (≈ ${fmt(forecast.projected)} en fin de mois) — le mois est en cours, rien d'alarmant`
             : forecast.projected != null
-              ? `Tranquille 😌 · ≈ ${fmt(forecast.perDayLeft)} / jour jusqu'à la fin du mois`
-              : 'Début de mois : trop tôt pour une prévision 😌'}
+              ? `Tranquille · ≈ ${fmt(forecast.perDayLeft)} / jour jusqu'à la fin du mois`
+              : 'Début de mois — prévision disponible après quelques jours'}
       </p>
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs text-slate-500">
-        <span>💳 Carte <strong className="text-slate-700">{fmt(live.cardClassified + live.unclassified)}</strong></span>
-        <span>💶 Espèces <strong className="text-slate-700">{fmt(live.cash)}</strong></span>
+        <span className="flex items-center gap-1"><CreditCard size={12} className="flex-shrink-0" />Carte <span className="font-semibold text-slate-700 tabular-nums">{fmt(live.cardClassified + live.unclassified)}</span></span>
+        <span className="flex items-center gap-1"><Banknote size={12} className="flex-shrink-0" />Espèces <span className="font-semibold text-slate-700 tabular-nums">{fmt(live.cash)}</span></span>
         {live.unclassified > 0 && (
           <button onClick={() => navigate('bank')} className="text-warn font-medium flex items-center gap-1">
             <CreditCard size={12} /> {fmt(live.unclassified)} à classer →
@@ -95,14 +281,14 @@ function StatCard({ label, value, sub, color = 'text-slate-800', bg = 'bg-white'
   return (
     <div className={cn('rounded-2xl border border-slate-100 p-5 shadow-sm', bg)}>
       <div className="flex items-start justify-between mb-3">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
+        <p className="text-xs font-medium text-slate-400">{label}</p>
         {Icon && <Icon size={16} className="text-slate-300" />}
       </div>
-      <p className={cn('text-2xl font-bold', color)}>{value}</p>
+      <p className={cn('text-2xl font-semibold tabular-nums', color)}>{value}</p>
       <div className="flex items-center gap-2 mt-1">
         {sub && <p className="text-xs text-slate-400">{sub}</p>}
         {pct !== undefined && (
-          <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded-full', color === 'text-savings' ? 'bg-savings/10 text-savings' : 'bg-slate-100 text-slate-500')}>
+          <span className={cn('text-xs font-medium px-1.5 py-0.5 rounded', color === 'text-savings' ? 'bg-savings/10 text-savings' : 'bg-slate-100 text-slate-500')}>
             {pct}%
           </span>
         )}
@@ -139,9 +325,8 @@ export default function Dashboard({ navigate }) {
       {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm text-slate-400 font-medium">Bonjour {profile.firstName} 👋</p>
-          <h1 className="text-2xl font-bold text-slate-800 mt-0.5">Mon budget</h1>
-          <p className="text-sm text-slate-400 capitalize">{monthLabel}</p>
+          <h1 className="text-2xl font-semibold text-slate-800 capitalize">{monthLabel}</h1>
+          <p className="text-sm text-slate-400 mt-0.5">{profile.firstName}</p>
         </div>
         <div className="flex items-center gap-3">
           {/* View toggle */}
@@ -167,6 +352,7 @@ export default function Dashboard({ navigate }) {
       </div>
 
       <MonthCloseBanner savingsHistory={state.savingsHistory} navigate={navigate} />
+      <SalaryDetectedBanner state={state} dispatch={dispatch} />
 
       {/* Desktop: 2 colonnes / Mobile: 1 colonne */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
@@ -174,22 +360,24 @@ export default function Dashboard({ navigate }) {
         {/* Colonne gauche */}
         <div className="lg:col-span-2 space-y-4">
           <LiveMonthCard state={state} navigate={navigate} />
+          <ForecastCard state={state} dispatch={dispatch} />
+          <TobaccoTile state={state} navigate={navigate} />
 
           {/* Hero card salaire */}
-          <div className="rounded-2xl bg-gradient-to-br from-primary to-primary-dark text-white p-6 shadow-lg">
+          <div className="rounded-2xl bg-slate-800 text-white p-6 shadow-lg">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-primary-light/80 text-xs font-medium uppercase tracking-wide">Salaire net</p>
-                <p className="text-4xl font-bold mt-1">{fmt(display(netSalary))}</p>
-                <p className="text-primary-light/70 text-xs mt-1">{periodLabel}</p>
+                <p className="text-white/60 text-xs font-medium">Salaire net</p>
+                <p className="text-4xl font-semibold mt-1 tabular-nums">{fmt(display(netSalary))}</p>
+                <p className="text-white/50 text-xs mt-1">{periodLabel}</p>
               </div>
               <div className="bg-white/10 rounded-2xl p-3">
                 <TrendingUp size={24} className="text-white" />
               </div>
             </div>
             <div className="mt-5 pt-4 border-t border-white/10 flex items-center justify-between">
-              <span className="text-sm text-primary-light/90">Taux d'épargne</span>
-              <span className="text-lg font-bold">{savRate}%</span>
+              <span className="text-sm text-white/70">Taux d'épargne</span>
+              <span className="text-lg font-semibold tabular-nums">{savRate}%</span>
             </div>
           </div>
 
@@ -230,7 +418,7 @@ export default function Dashboard({ navigate }) {
             <div className="flex items-center gap-2 mb-4">
               <PiggyBank size={16} className="text-savings" />
               <p className="text-sm font-semibold text-slate-700">Détail épargne</p>
-              <span className={cn('ml-auto text-lg font-bold', remainder < 0 && programmedSav === 0 ? 'text-danger' : 'text-savings')}>
+              <span className={cn('ml-auto text-lg font-semibold tabular-nums', remainder < 0 && programmedSav === 0 ? 'text-danger' : 'text-savings')}>
                 {fmt(display(totalSav))}
               </span>
             </div>
@@ -264,7 +452,8 @@ export default function Dashboard({ navigate }) {
               </div>
               {remainder < 0 && (
                 <div className="mt-2 p-3 bg-danger/10 rounded-xl text-xs text-danger font-medium">
-                  ⚠️ Budget prévisionnel en déficit de {fmt(Math.abs(remainder))}/mois — ajuste tes virements ou enveloppes
+                  <AlertTriangle size={12} className="flex-shrink-0 mt-0.5 inline-block mr-1" />
+                  Budget prévisionnel en déficit de {fmt(Math.abs(remainder))}/mois — ajuste tes virements ou enveloppes
                 </div>
               )}
             </div>
@@ -320,6 +509,7 @@ export default function Dashboard({ navigate }) {
             const breakdown = budgetRuleBreakdown(ruleId, netSalary, fixedCharges, envelopes, {
               includeFixed: profile.budgetIncludeFixed ?? true,
               savingsGoal: profile.kakeiboSavingsGoal,
+              split: idealSplit(profile),
             });
             if (!breakdown) return null;
             const { rule, base, includeFixed, rows, toAssign } = breakdown;
@@ -350,7 +540,7 @@ export default function Dashboard({ navigate }) {
                   )}>
                     <div>
                       <p className="text-xs font-semibold text-slate-700">Reste à affecter</p>
-                      <p className="text-[10px] text-slate-500">
+                      <p className="text-xs text-slate-500">
                         {Math.round(toAssign) === 0 ? 'Chaque euro a une mission 👌'
                           : toAssign > 0 ? 'Donne-lui une enveloppe (épargne, envies…)'
                           : 'Tu as affecté plus que ton salaire'}
@@ -362,7 +552,8 @@ export default function Dashboard({ navigate }) {
                   </div>
                 )}
                 <div className="space-y-4">
-                  {rows.map(({ key, label, actual, ideal, diff, color, saving: isSaving, icon, tip, topEnvelopes }) => {
+                  {rows.map(({ key, label, actual, ideal, diff, color, saving: isSaving, tip, topEnvelopes }) => {
+                    const Icon = RULE_ROW_ICONS[key] || Receipt;
                     const hasTarget = ideal != null;
                     const over = hasTarget && diff > 0;
                     const barPct = Math.min(100, hasTarget
@@ -371,11 +562,11 @@ export default function Dashboard({ navigate }) {
                     return (
                       <div key={key}>
                         <div className="flex items-center justify-between text-xs mb-1.5">
-                          <span className="font-semibold text-slate-700">{icon} {label}</span>
+                          <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Icon size={12} className="text-slate-400" />{label}</span>
                           <span className="text-slate-400 font-medium">{tip}</span>
                         </div>
                         <div className="flex justify-between text-xs mb-1.5">
-                          <span className={cn('font-bold', over && !isSaving ? 'text-warn' : isSaving && over ? 'text-savings' : 'text-slate-600')}>
+                          <span className={cn('font-semibold tabular-nums', over && !isSaving ? 'text-warn' : isSaving && over ? 'text-savings' : 'text-slate-600')}>
                             {fmt(display(actual))}
                           </span>
                           {hasTarget && (
@@ -390,17 +581,17 @@ export default function Dashboard({ navigate }) {
                         </div>
                         <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                           <div
-                            className="h-full rounded-full transition-all"
+                            className="h-full rounded-full transition-[width]"
                             style={{ width: `${barPct}%`, background: over && !isSaving ? '#f59e0b' : color }}
                           />
                         </div>
                         {over && !isSaving && topEnvelopes.length > 0 && (
-                          <p className="text-[10px] text-warn mt-1">
+                          <p className="text-xs text-warn mt-1">
                             ↳ {topEnvelopes.map(e => `${e.name} (${fmt(e.budgetMonthly)})`).join(', ')}
                           </p>
                         )}
                         {hasTarget && !over && isSaving && (
-                          <p className="text-[10px] text-slate-400 mt-1">
+                          <p className="text-xs text-slate-400 mt-1">
                             ↳ encore {fmt(display(Math.abs(diff)))} à allouer
                           </p>
                         )}
@@ -409,8 +600,8 @@ export default function Dashboard({ navigate }) {
                   })}
                 </div>
                 {rule.kakeibo && (
-                  <button onClick={() => navigate('history')} className="mt-4 text-xs font-medium text-primary hover:text-primary-dark">
-                    📓 Faire le bilan du mois dans l'historique →
+                  <button onClick={() => navigate('history')} className="mt-4 text-xs font-medium text-primary hover:text-primary-dark flex items-center gap-1.5">
+                    <NotebookPen size={12} />Faire le bilan du mois dans l'historique →
                   </button>
                 )}
               </div>

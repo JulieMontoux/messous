@@ -4,14 +4,19 @@ const { monthKey, localDate, daysInMonth } = require('./dates');
 
 const eur = v => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(v);
 
-// Vérifie le seuil d'alerte d'une enveloppe sur le mois en cours et envoie un e-mail si franchi
-async function checkEnvelopeAlert(userId, envelopeId) {
+// Vérifie le seuil d'alerte d'une enveloppe sur le mois en cours et envoie un e-mail si franchi.
+// expenseDate : date de la dépense qui déclenche la vérification — une dépense d'un autre mois
+// (ex. classement des opérations du mois précédent) ne déclenche jamais d'e-mail.
+async function checkEnvelopeAlert(userId, envelopeId, expenseDate) {
   if (!envelopeId) return;
+  if (!isInCurrentMonth(expenseDate)) return;
   const { rows: [profile] } = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
   if (!profile || profile.alerts_enabled === false) return;
 
   const { rows: [env] } = await pool.query('SELECT * FROM envelopes WHERE id = $1 AND user_id = $2', [envelopeId, userId]);
   if (!env || env.type === 'saving') return;
+  // Arrêt du tabac en cours : pas d'alerte sur l'enveloppe tabac
+  if (env.category_id === 'tobacco' && profile.tobacco_quit_date) return;
   const budget = Number(env.budget_monthly) || 0;
   if (budget <= 0) return;
 
@@ -40,6 +45,11 @@ async function checkEnvelopeAlert(userId, envelopeId) {
            <p>Il reste <b>${eur(Math.max(0, remaining))}</b> pour encore ${daysLeft} jour(s), soit moins d'un ${tobaccoUnit(profile.tobacco_type)} à ${eur(packPrice)}.</p>`,
           { href: appUrl('/?page=envelopes'), label: 'Voir mes enveloppes' }
         ),
+        push: {
+          title: '🚬 Budget tabac épuisé',
+          body: `Il reste ${eur(Math.max(0, remaining))} pour ${daysLeft} jour(s).`,
+          url: '/?page=envelopes',
+        },
       }));
       return;
     }
@@ -58,11 +68,22 @@ async function checkEnvelopeAlert(userId, envelopeId) {
        <p>${remaining >= 0 ? `Il reste <b>${eur(remaining)}</b>` : `Dépassement de <b>${eur(-remaining)}</b>`} — encore ${daysLeft} jour(s) avant la fin du mois.</p>`,
       { href: appUrl('/?page=envelopes'), label: 'Voir mes enveloppes' }
     ),
+    push: {
+      title: level >= 100 ? `⚠️ ${env.name} dépassée` : `⚡ ${env.name} à ${pct} %`,
+      body: `${eur(spentNum)} / ${eur(budget)} · ${remaining >= 0 ? `reste ${eur(remaining)}` : `dépassement ${eur(-remaining)}`}`,
+      url: '/?page=envelopes',
+    },
   }));
+}
+
+function isInCurrentMonth(date, now = new Date()) {
+  if (!date) return false;
+  const d = date instanceof Date ? localDate(date) : String(date).slice(0, 10);
+  return d.slice(0, 7) === monthKey(now) && d <= localDate(now);
 }
 
 function tobaccoUnit(type) {
   return type === 'roule' ? 'paquet de tabac à rouler' : type === 'tube' ? 'pot de tabac à tuber' : 'paquet';
 }
 
-module.exports = { checkEnvelopeAlert };
+module.exports = { checkEnvelopeAlert, isInCurrentMonth };

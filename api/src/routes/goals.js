@@ -11,6 +11,7 @@ const toClient = r => ({
   currentAmount: Number(r.current_amount),
   targetDate: r.target_date ? String(r.target_date).slice(0, 10) : null,
   icon: r.icon,
+  monthlyContribution: r.monthly_contribution != null ? Number(r.monthly_contribution) : null,
   createdAt: r.created_at,
 });
 
@@ -26,11 +27,11 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { name, targetAmount, currentAmount = 0, targetDate = null, icon = '🎯' } = req.body;
+    const { name, targetAmount, currentAmount = 0, targetDate = null, icon = '🎯', monthlyContribution = null } = req.body;
     const { rows } = await pool.query(
-      `INSERT INTO savings_goals (user_id, name, target_amount, current_amount, target_date, icon)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [req.user.userId, name, targetAmount, currentAmount, targetDate, icon]
+      `INSERT INTO savings_goals (user_id, name, target_amount, current_amount, target_date, icon, monthly_contribution)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [req.user.userId, name, targetAmount, currentAmount, targetDate, icon, monthlyContribution || null]
     );
     res.json(toClient(rows[0]));
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -38,12 +39,12 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { name, targetAmount, currentAmount, targetDate, icon } = req.body;
+    const { name, targetAmount, currentAmount, targetDate, icon, monthlyContribution } = req.body;
     const { rows } = await pool.query(
       `UPDATE savings_goals
-       SET name=$2, target_amount=$3, current_amount=$4, target_date=$5, icon=$6
+       SET name=$2, target_amount=$3, current_amount=$4, target_date=$5, icon=$6, monthly_contribution=$8
        WHERE id=$1 AND user_id=$7 RETURNING *`,
-      [req.params.id, name, targetAmount, currentAmount, targetDate ?? null, icon, req.user.userId]
+      [req.params.id, name, targetAmount, currentAmount, targetDate ?? null, icon, req.user.userId, monthlyContribution || null]
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(toClient(rows[0]));

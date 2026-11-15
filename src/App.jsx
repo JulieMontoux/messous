@@ -5,6 +5,7 @@ import { useBudget } from './context/BudgetContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import { ForgotPassword, ResetPassword, readResetToken } from './pages/PasswordReset';
 import Onboarding from './pages/Onboarding';
 import Dashboard from './pages/Dashboard';
 import Charges from './pages/Charges';
@@ -14,7 +15,9 @@ import Suggestions from './pages/Suggestions';
 import Settings from './pages/Settings';
 import History from './pages/History';
 import Bank from './pages/Bank';
+import Advances from './pages/Advances';
 import { api, fetchAll } from './api/client';
+import { useTheme } from './hooks/useTheme';
 import {
   totalFixed as getTotalFixed,
   totalProgrammedSavings,
@@ -34,6 +37,7 @@ const PAGES = {
   suggestions: Suggestions,
   history: History,
   bank: Bank,
+  advances: Advances,
   settings: Settings,
 };
 
@@ -102,7 +106,7 @@ function MigrationScreen({ onDone }) {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <p className="text-5xl mb-3">📦</p>
-          <h1 className="text-2xl font-bold text-slate-800">Données trouvées</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">Données trouvées</h1>
           <p className="text-sm text-slate-400 mt-2">
             On a détecté tes données de l'ancienne version
           </p>
@@ -140,7 +144,9 @@ function MigrationScreen({ onDone }) {
 }
 
 function BudgetApp() {
-  const { state, dispatch, ready } = useBudget();
+  const { state, dispatch, ready, loadError, reload } = useBudget();
+  useTheme(state.profile.theme);
+  const { logout } = useAuth();
   const [params, setParams] = useState(readUrlParams);
   const [page, setPageState] = useState(() => (PAGES[params.page] ? params.page : 'dashboard'));
 
@@ -174,6 +180,21 @@ function BudgetApp() {
       },
     });
   }, [ready, profile.netSalary, profile.onboardingDone, fixedCharges, envelopes]);
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+        <div className="card w-full max-w-sm text-center space-y-3">
+          <p className="text-4xl">🔌</p>
+          <p className="font-semibold text-slate-800">Impossible de charger tes données</p>
+          <p className="text-sm text-slate-500">Le serveur ne répond pas pour le moment. Tes données ne sont pas perdues.</p>
+          <p className="text-xs text-slate-400">{loadError}</p>
+          <button className="btn-primary w-full" onClick={reload}>Réessayer</button>
+          <button className="btn-secondary w-full" onClick={logout}>Se déconnecter</button>
+        </div>
+      </div>
+    );
+  }
 
   if (!ready) {
     return (
@@ -210,11 +231,31 @@ function BudgetApp() {
 function App() {
   const { isAuthenticated } = useAuth();
   const [authMode, setAuthMode] = useState('login');
+  // Lien « mot de passe oublié » reçu par e-mail : prioritaire sur tout le reste
+  const [resetToken, setResetToken] = useState(readResetToken);
+
+  // Après une connexion, l'écran à afficher en cas de déconnexion redevient « connexion »
+  // (et non l'inscription) — ajustement d'état pendant le rendu, sans effet
+  const [wasAuthenticated, setWasAuthenticated] = useState(isAuthenticated);
+  if (wasAuthenticated !== isAuthenticated) {
+    setWasAuthenticated(isAuthenticated);
+    if (isAuthenticated) setAuthMode('login');
+  }
+
+  if (resetToken) {
+    return (
+      <ResetPassword
+        token={resetToken}
+        onDone={() => setResetToken(null)}
+        onCancel={() => { setResetToken(null); setAuthMode('login'); }}
+      />
+    );
+  }
 
   if (!isAuthenticated) {
-    return authMode === 'login'
-      ? <Login onSwitch={() => setAuthMode('register')} />
-      : <Register onSwitch={() => setAuthMode('login')} />;
+    if (authMode === 'register') return <Register onSwitch={() => setAuthMode('login')} />;
+    if (authMode === 'forgot') return <ForgotPassword onBack={() => setAuthMode('login')} />;
+    return <Login onSwitch={() => setAuthMode('register')} onForgot={() => setAuthMode('forgot')} />;
   }
 
   return (

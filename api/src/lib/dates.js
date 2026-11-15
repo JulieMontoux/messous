@@ -17,4 +17,9 @@ function isLastDayOfMonth(d = new Date()) {
   return d.getDate() === daysInMonth(d);
 }
 
-module.exports = { localDate, monthKey, daysInMonth, isLastDayOfMonth };
+// Début de l'historique bancaire récupéré : 1er du mois précédent
+function bankHistoryStart(d = new Date()) {
+  return localDate(new Date(d.getFullYear(), d.getMonth() - 1, 1));
+}
+
+module.exports = { localDate, monthKey, daysInMonth, isLastDayOfMonth, bankHistoryStart };

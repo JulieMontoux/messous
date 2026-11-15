@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { BUDGET_RULES, fmt } from '../utils/budget';
+import { BUDGET_RULES, fmt, pctLabel } from '../utils/budget';
 
 // Choix de la règle du « Budget idéal » et du calcul avec / sans charges fixes.
 // recommended : { ruleId, includeFixed } pour afficher le badge « Conseillé »
 // savingsGoal / onChangeSavingsGoal / defaultGoal : objectif d'épargne Kakeibo (€ par mois)
+// split : répartition personnalisée de la 50/30/20 (idealSplit du profil)
 export default function BudgetRulePicker({
   ruleId, includeFixed, onChangeRule, onChangeIncludeFixed, recommended,
-  savingsGoal, onChangeSavingsGoal, defaultGoal,
+  savingsGoal, onChangeSavingsGoal, defaultGoal, split,
 }) {
+  const customSplit = !!split && (Math.round(split.needs * 100) !== 50 || Math.round(split.wants * 100) !== 30);
   const [goalDraft, setGoalDraft] = useState(savingsGoal ? String(savingsGoal) : '');
 
   return (
@@ -29,7 +31,11 @@ export default function BudgetRulePicker({
                 <span className="text-[10px] font-semibold text-savings bg-savings/10 px-1.5 py-0.5 rounded-full">Conseillé</span>
               )}
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">{rule.description}</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {id === '50-30-20' && customSplit
+                ? `Personnalisée : ${pctLabel(split.needs)} besoins · ${pctLabel(split.wants)} envies · ${pctLabel(split.savings)} épargne`
+                : rule.description}
+            </p>
           </button>
         );
       })}

@@ -1,36 +1,16 @@
 require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
 const { migrate } = require('./db');
 const { startScheduler } = require('./lib/scheduler');
 
-const app = express();
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
-app.use(express.json({ limit: '5mb' }));
-app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    if (req.path !== '/api/health')
-      console.log(`${req.method} ${req.path} → ${res.statusCode} (${Date.now() - start}ms)`);
-  });
-  next();
-});
+if (!process.env.JWT_SECRET) {
+  console.error('JWT_SECRET manquant : refus de démarrer.');
+  process.exit(1);
+}
+if (process.env.JWT_SECRET.length < 32 || /CHANGE_ME/.test(process.env.JWT_SECRET)) {
+  console.warn('⚠️  JWT_SECRET faible (< 32 caractères ou valeur d\'exemple) : génère-en un avec `openssl rand -hex 32`.');
+}
 
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/profile', require('./routes/profile'));
-app.use('/api/settings', require('./routes/settings'));
-app.use('/api/charges', require('./routes/charges'));
-app.use('/api/envelopes', require('./routes/envelopes'));
-app.use('/api/transactions', require('./routes/transactions'));
-app.use('/api/savings', require('./routes/savings'));
-app.use('/api/goals', require('./routes/goals'));
-app.use('/api/recurring', require('./routes/recurring'));
-app.use('/api/ai', require('./routes/ai'));
-app.use('/api/withdrawals', require('./routes/withdrawals'));
-app.use('/api/bank', require('./routes/bank'));
-
-app.get('/api/health', (_, res) => res.json({ ok: true }));
-
+const app = require('./app');
 const PORT = process.env.PORT || 3001;
 
 migrate()

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Receipt, Wallet, Lightbulb, UserRound, BarChart2, ChevronLeft, ChevronRight,
-  TrendingUp, LogOut, Target, Landmark, MoreHorizontal, RefreshCw,
+  TrendingUp, LogOut, Target, Landmark, MoreHorizontal, RefreshCw, HandCoins,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useBudget } from '../context/BudgetContext';
 import { useVersionCheck } from '../hooks/useVersionCheck';
+import { isBankTodo } from '../utils/budget';
 
 const NAV = [
   { id: 'dashboard', label: 'Tableau de bord', short: 'Accueil', icon: LayoutDashboard },
@@ -15,6 +16,7 @@ const NAV = [
   { id: 'history', label: 'Historique', short: 'Historique', icon: BarChart2 },
   { id: 'charges', label: 'Charges fixes', short: 'Fixes', icon: Receipt },
   { id: 'goals', label: 'Objectifs', short: 'Objectifs', icon: Target },
+  { id: 'advances', label: 'Avances', short: 'Avances', icon: HandCoins },
   { id: 'suggestions', label: 'Astuces', short: 'Astuces', icon: Lightbulb },
   { id: 'settings', label: 'Profil', short: 'Profil', icon: UserRound },
 ];
@@ -29,17 +31,17 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
 
   return (
     <aside className={cn(
-      'hidden lg:flex flex-col fixed top-0 left-0 h-full bg-white border-r border-slate-100 z-30 transition-all duration-300',
+      'hidden lg:flex flex-col fixed top-0 left-0 h-full bg-white border-r border-slate-100 z-30 transition-[width] duration-200',
       collapsed ? 'w-[68px]' : 'w-[220px]'
     )}>
       <div className={cn('flex items-center h-16 px-4 border-b border-slate-100', collapsed ? 'justify-center' : 'gap-3')}>
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center flex-shrink-0">
           <TrendingUp size={16} className="text-white" />
         </div>
         {!collapsed && (
           <div>
-            <p className="font-bold text-slate-800 text-sm leading-none">MesSous</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">Budget enveloppes</p>
+            <p className="font-semibold text-slate-800 text-sm leading-none">MesSous</p>
+            <p className="text-xs text-slate-400 mt-0.5">Budget enveloppes</p>
           </div>
         )}
       </div>
@@ -54,7 +56,7 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
               onClick={() => onNavigate(id)}
               title={collapsed ? label : undefined}
               className={cn(
-                'relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
+                'relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors duration-150',
                 collapsed ? 'justify-center px-2' : '',
                 active ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
               )}
@@ -63,7 +65,7 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
               {!collapsed && <span className="flex-1 text-left">{label}</span>}
               {badge && (
                 <span className={cn(
-                  'text-[10px] font-bold bg-warn text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center',
+                  'text-xs font-semibold bg-warn text-white rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center',
                   collapsed && 'absolute top-1 right-1'
                 )}>{badge}</span>
               )}
@@ -76,14 +78,14 @@ function Sidebar({ page, onNavigate, collapsed, onToggle, unclassified }) {
         {!collapsed && profile.firstName && (
           <button onClick={() => onNavigate('settings')} className="w-full text-left px-3 py-2 mb-1 rounded-xl hover:bg-slate-50">
             <p className="text-xs font-semibold text-slate-700 truncate">{profile.firstName}</p>
-            <p className="text-[10px] text-slate-400">Modifier mon profil</p>
+            <p className="text-xs text-slate-400">Modifier mon profil</p>
           </button>
         )}
         <button
           onClick={logout}
           title={collapsed ? 'Se déconnecter' : undefined}
           className={cn(
-            'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:bg-danger/5 hover:text-danger transition-all duration-150',
+            'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:bg-danger/5 hover:text-danger transition-colors duration-150',
             collapsed ? 'justify-center px-2' : ''
           )}
         >
@@ -119,8 +121,10 @@ function BottomNav({ page, onNavigate, unclassified }) {
       {moreOpen && (
         <div className="lg:hidden fixed inset-0 z-40" onClick={() => setMoreOpen(false)}>
           <div className="absolute inset-0 bg-black/30" />
+          {/* Au-dessus de la barre du bas, y compris la zone de l'indicateur d'accueil (iPhone) */}
           <div
-            className="absolute bottom-[68px] left-3 right-3 bg-white rounded-2xl shadow-xl p-2 grid grid-cols-3 gap-1"
+            data-testid="more-menu"
+            className="absolute bottom-[calc(4.75rem+var(--sab))] left-3 right-3 max-h-[calc(100dvh-7rem-var(--sab))] overflow-y-auto bg-white rounded-2xl shadow-xl p-2 grid grid-cols-3 gap-1"
             onClick={e => e.stopPropagation()}
           >
             {more.map(({ id, short, icon: Icon }) => (
@@ -146,7 +150,7 @@ function BottomNav({ page, onNavigate, unclassified }) {
           </div>
         </div>
       )}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-slate-100 z-40 pb-[env(safe-area-inset-bottom)]">
+      <nav data-testid="bottom-nav" className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-slate-100 z-50 pb-[var(--sab)]">
         <div className="grid grid-cols-5 px-1 py-1.5">
           {main.map(({ id, short, icon: Icon }) => {
             const active = page === id;
@@ -160,7 +164,7 @@ function BottomNav({ page, onNavigate, unclassified }) {
                 )}
               >
                 <Icon size={20} strokeWidth={active ? 2.5 : 2} />
-                <span className="text-[10px] font-medium">{short}</span>
+                <span className="text-xs font-medium">{short}</span>
                 {id === 'bank' && unclassified > 0 && (
                   <span className="absolute top-0.5 right-[calc(50%-18px)] w-2 h-2 rounded-full bg-warn" />
                 )}
@@ -175,7 +179,7 @@ function BottomNav({ page, onNavigate, unclassified }) {
             )}
           >
             <MoreHorizontal size={20} />
-            <span className="text-[10px] font-medium">Plus</span>
+            <span className="text-xs font-medium">Plus</span>
           </button>
         </div>
       </nav>
@@ -189,7 +193,7 @@ export default function Layout({ page, onNavigate, children }) {
   const [syncError, setSyncError] = useState('');
   const updateAvailable = useVersionCheck();
 
-  const unclassified = state.bankTransactions.filter(b => b.amount < 0 && b.isCard && !b.ignored && !b.envelopeId).length;
+  const unclassified = state.bankTransactions.filter(isBankTodo).length;
 
   useEffect(() => {
     const handler = (e) => {
@@ -221,8 +225,8 @@ export default function Layout({ page, onNavigate, children }) {
       )}
 
       <main className={cn(
-        'min-h-screen transition-all duration-300',
-        'pb-24 lg:pb-8',
+        'min-h-screen transition-[margin-left] duration-200',
+        'pb-[calc(6rem+var(--sab))] lg:pb-8',
         collapsed ? 'lg:ml-[68px]' : 'lg:ml-[220px]'
       )}>
         <div className="max-w-5xl mx-auto px-4 lg:px-8">

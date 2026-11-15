@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Upload, Link2, Trash2, CreditCard, EyeOff, Eye, X, Landmark, Search } from 'lucide-react';
+import { RefreshCw, Upload, Link2, Trash2, CreditCard, EyeOff, Eye, X, Landmark, Search, Sparkles, Check } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
-import { api, fetchBankTransactions } from '../api/client';
-import { fmt, fmtDec, realSpending } from '../utils/budget';
+import { api } from '../api/client';
+import { fmt, fmtDec, realSpending, isBankTodo as isTodo, chargeFromForm, isChargeActive } from '../utils/budget';
+import { blankCharge, generateId } from '../data/defaults';
+import ChargeForm from '../components/ChargeForm';
 import { periodStart, formatDay } from '../utils/period';
 import { cn } from '../lib/utils';
 import Modal from '../components/Modal';
@@ -10,35 +12,72 @@ import PageHeader from '../components/PageHeader';
 
 const FILTERS = [
   { id: 'todo', label: 'À classer' },
-  { id: 'card', label: 'Cartes' },
+  { id: 'card', label: 'Dépenses' },
   { id: 'all', label: 'Toutes' },
   { id: 'ignored', label: 'Ignorées' },
 ];
 
-function isTodo(b) {
-  return b.amount < 0 && b.isCard && !b.ignored && !b.envelopeId;
-}
-
 function SpendTile({ label, value, sub, accent = 'text-slate-800' }) {
   return (
     <div className="rounded-xl bg-slate-50 px-3 py-2.5">
-      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
-      <p className={cn('text-lg font-bold', accent)}>{fmt(value)}</p>
-      {sub && <p className="text-[10px] text-slate-400">{sub}</p>}
+      <p className="text-xs font-semibold text-slate-400">{label}</p>
+      <p className={cn('text-lg font-semibold', accent)}>{fmt(value)}</p>
+      {sub && <p className="text-xs text-slate-400">{sub}</p>}
     </div>
   );
 }
 
-function BankRow({ b, envelopes, onAssign, onUnassign, onIgnore }) {
-  const [envId, setEnvId] = useState('');
+const FREQ_LABEL = { quarterly: ' · trimestriel', yearly: ' · annuel' };
+
+// Valeur du menu de classement : « env:<id> », « fix:<id> » ou « new-fix »
+// Libellé d'une destination « env:<id> » / « fix:<id> »
+function targetLabel(target, envelopes, fixedCharges) {
+  const [kind, id] = target.split(':');
+  if (kind === 'env') {
+    const e = envelopes.find(x => x.id === id);
+    return e ? `${e.icon || ''} ${e.name}` : null;
+  }
+  const c = fixedCharges.find(x => x.id === id);
+  return c ? `📌 ${c.name}` : null;
+}
+
+function targetBody(target) {
+  const [kind, id] = target.split(':');
+  return kind === 'fix' ? { fixedChargeId: id } : { envelopeId: id };
+}
+
+function BankRow({ b, envelopes, fixedCharges, selected, bulkMode, suggestion, onToggle, onAssign, onUnassign, onIgnore, onCreateCharge }) {
+  const [target, setTarget] = useState('');
   const [remember, setRemember] = useState(true);
   const env = envelopes.find(e => e.id === b.envelopeId);
+  const charge = fixedCharges.find(c => c.id === b.fixedChargeId);
   const debit = b.amount < 0;
 
+  function classify() {
+    if (target === 'new-fix') return onCreateCharge(b, remember);
+    if (target === 'cash') return onAssign(b, { asWithdrawal: true }, false);
+    if (target === 'advance') {
+      const person = window.prompt('Avance pour qui ? (prénom)');
+      if (person && person.trim()) onAssign(b, { advance: { person: person.trim() } }, false);
+      return;
+    }
+    const [kind, id] = target.split(':');
+    onAssign(b, kind === 'fix' ? { fixedChargeId: id } : { envelopeId: id }, remember);
+  }
+
   return (
-    <div className={cn('py-3 border-b border-slate-50 last:border-0', b.ignored && 'opacity-50')}>
+    <div className={cn('py-3 border-b border-slate-50 last:border-0', b.ignored && 'opacity-50', selected && 'bg-primary/5 -mx-2 px-2 rounded-lg')}>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        {debit && (
+          <input
+            type="checkbox"
+            className="mt-1 w-4 h-4 accent-primary flex-shrink-0 cursor-pointer"
+            checked={selected}
+            onChange={() => onToggle(b.id)}
+            aria-label="Sélectionner"
+          />
+        )}
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-slate-700 truncate flex items-center gap-1.5">
             {b.isCard && <CreditCard size={12} className="text-slate-400 flex-shrink-0" />}
             {b.label || '—'}
@@ -51,30 +90,62 @@ function BankRow({ b, envelopes, onAssign, onUnassign, onIgnore }) {
       </div>
 
       {debit && !b.ignored && (
-        env ? (
+        env || charge || b.withdrawalId || b.advanceId ? (
           <div className="flex items-center gap-2 mt-2">
-            <span className="text-xs bg-primary/10 text-primary font-medium px-2 py-1 rounded-full">{env.icon || ''} {env.name}</span>
+            {b.advanceId
+              ? <span className="text-xs bg-amber-50 text-amber-700 font-medium px-2 py-1 rounded-full">🤝 Avance · {b.advancePerson}</span>
+              : b.withdrawalId
+              ? <span className="text-xs bg-savings/10 text-savings font-medium px-2 py-1 rounded-full">💶 Retrait d'espèces</span>
+              : env
+              ? <span className="text-xs bg-primary/10 text-primary font-medium px-2 py-1 rounded-full">{env.icon || ''} {env.name}</span>
+              : <span className="text-xs bg-fixed/10 text-fixed-dark font-medium px-2 py-1 rounded-full">📌 {charge.name}{FREQ_LABEL[charge.frequency] || ''}</span>}
             <button onClick={() => onUnassign(b)} className="text-xs text-slate-400 hover:text-danger flex items-center gap-0.5">
               <X size={12} /> Retirer
             </button>
           </div>
-        ) : (
+        ) : bulkMode ? null : (
+          <>
+          {suggestion && targetLabel(suggestion.target, envelopes, fixedCharges) && (
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 font-medium px-2 py-1 rounded-full flex items-center gap-1">
+                <Sparkles size={11} /> {targetLabel(suggestion.target, envelopes, fixedCharges)} ?
+                <span className="text-xs text-amber-500 font-normal">{suggestion.source === 'ai' ? 'IA' : 'marchand connu'}</span>
+              </span>
+              <button
+                onClick={() => onAssign(b, targetBody(suggestion.target), false)}
+                className="text-xs font-semibold text-savings flex items-center gap-0.5 hover:underline"
+              >
+                <Check size={13} /> Accepter
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2 mt-2">
-            <select className="input py-1.5 text-xs flex-1 min-w-[160px]" value={envId} onChange={e => setEnvId(e.target.value)}>
-              <option value="">Ajouter à une enveloppe…</option>
-              {envelopes.map(e => <option key={e.id} value={e.id}>{e.icon || ''} {e.name}</option>)}
+            <select className="input py-1.5 text-xs flex-1 min-w-[160px]" value={target} onChange={e => setTarget(e.target.value)}>
+              <option value="">Classer dans…</option>
+              {envelopes.length > 0 && (
+                <optgroup label="Enveloppes">
+                  {envelopes.map(e => <option key={e.id} value={`env:${e.id}`}>{e.icon || ''} {e.name}</option>)}
+                </optgroup>
+              )}
+              <optgroup label="Charges fixes">
+                {fixedCharges.filter(c => isChargeActive(c)).map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
+                <option value="new-fix">＋ Nouvelle charge fixe…</option>
+              </optgroup>
+              <option value="cash">💶 Retrait d'espèces</option>
+              <option value="advance">🤝 Avance pour quelqu'un…</option>
             </select>
             <label className="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer">
               <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
               toujours pour ce marchand
             </label>
-            <button className="btn-primary py-1.5 px-3 text-xs" disabled={!envId} onClick={() => onAssign(b, envId, remember)}>
+            <button className="btn-primary py-1.5 px-3 text-xs" disabled={!target} onClick={classify}>
               Classer
             </button>
             <button onClick={() => onIgnore(b, true)} className="p-1.5 text-slate-300 hover:text-slate-500" title="Ignorer (virement, retrait…)">
               <EyeOff size={14} />
             </button>
           </div>
+          </>
         )
       )}
       {b.ignored && (
@@ -83,6 +154,105 @@ function BankRow({ b, envelopes, onAssign, onUnassign, onIgnore }) {
         </button>
       )}
     </div>
+  );
+}
+
+// Barre de classement en masse (opérations cochées)
+function BulkBar({ count, total, envelopes, fixedCharges, onApply, onClear }) {
+  const [target, setTarget] = useState('');
+  const [remember, setRemember] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  async function apply(action) {
+    setBusy(true);
+    await onApply(action, remember);
+    setBusy(false);
+    setTarget('');
+  }
+
+  return (
+    <div className="sticky top-2 z-20 bg-slate-800 text-white rounded-xl p-3 mb-3 shadow-lg space-y-2">
+      <div className="flex items-center justify-between text-sm">
+        <span><strong>{count}</strong> sélectionnée{count > 1 ? 's' : ''} · {fmtDec(total)}</span>
+        <button onClick={onClear} className="text-xs text-slate-300 hover:text-white flex items-center gap-1"><X size={12} /> Désélectionner</button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="input py-1.5 text-xs text-slate-800 flex-1 min-w-[160px]" value={target} onChange={e => setTarget(e.target.value)}>
+          <option value="">Classer dans…</option>
+          {envelopes.length > 0 && (
+            <optgroup label="Enveloppes">
+              {envelopes.map(e => <option key={e.id} value={`env:${e.id}`}>{e.icon || ''} {e.name}</option>)}
+            </optgroup>
+          )}
+          {fixedCharges.length > 0 && (
+            <optgroup label="Charges fixes">
+              {fixedCharges.filter(c => isChargeActive(c)).map(c => <option key={c.id} value={`fix:${c.id}`}>📌 {c.name}{FREQ_LABEL[c.frequency] || ''}</option>)}
+            </optgroup>
+          )}
+          <option value="cash">💶 Retrait d'espèces</option>
+        </select>
+        <label className="flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer">
+          <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
+          retenir ces marchands
+        </label>
+        <button className="btn-primary py-1.5 px-3 text-xs" disabled={!target || busy} onClick={() => apply(target)}>
+          Classer
+        </button>
+        <button className="py-1.5 px-3 text-xs rounded-xl bg-white/10 hover:bg-white/20 flex items-center gap-1" disabled={busy} onClick={() => apply('ignore')}>
+          <EyeOff size={12} /> Ignorer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Nom lisible du marchand à partir du libellé bancaire (« PRLV SEPA AMAZON PRIME FR » → « Amazon Prime Fr »)
+function merchantName(label) {
+  const name = String(label || '')
+    .replace(/PAIEMENT PAR CARTE|PAIEMENT CB|ACHAT CB|FACTURE CARTE|CARTE\s*X?\d*|\b(CB|VISA|MASTERCARD|PRLV|PRELEVEMENT|SEPA|ECHEANCE|EUROPEEN)\b/gi, ' ')
+    .replace(/\d{2}[/.-]\d{2}([/.-]\d{2,4})?|\bX?\d+\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/(^|\s)\S/g, c => c.toUpperCase());
+  return (name || String(label || '').trim()).slice(0, 60);
+}
+
+// Crée une charge fixe à partir d'un paiement (ex. abonnement annuel), puis y rattache le paiement
+function NewChargeModal({ b, onSave, onClose }) {
+  const month = Number(b.date.slice(5, 7));
+  const [form, setForm] = useState({
+    ...blankCharge(),
+    name: merchantName(b.label),
+    categoryId: 'subscription',
+    amount: Math.abs(b.amount),
+    dueMonth: month,
+  });
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Modal
+      title="Nouvelle charge fixe"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>Annuler</button>
+          <button
+            className="btn-primary"
+            disabled={!form.name || !form.amount || busy}
+            onClick={async () => { setBusy(true); await onSave(form); }}
+          >
+            Créer et classer
+          </button>
+        </>
+      }
+    >
+      <p className="text-xs text-slate-500">
+        Paiement du {formatDay(b.date)} : <strong>{fmtDec(Math.abs(b.amount))}</strong>.
+        Pour un abonnement annuel, choisis « Annuel » : le budget mettra 1/12 de côté chaque mois.
+      </p>
+      <ChargeForm form={form} setForm={setForm} />
+    </Modal>
   );
 }
 
@@ -115,6 +285,7 @@ function ConnectModal({ onClose }) {
       <p className="text-xs text-slate-500">
         Connexion sécurisée DSP2 via Enable Banking : tu t'identifies directement sur le site de ta banque,
         MesSous ne voit jamais tes identifiants. Accès en lecture seule, valable 180 jours.
+        Les opérations sont récupérées à partir du 1er du mois dernier.
       </p>
       <div className="relative">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -175,7 +346,8 @@ function ImportModal({ onClose, onImported }) {
     >
       <p className="text-xs text-slate-500">
         Exporte tes opérations depuis l'espace client de ta banque (format CSV). Colonnes reconnues :
-        Date, Libellé, Montant (ou Débit / Crédit). Les doublons sont ignorés : tu peux réimporter sans risque.
+        Date, Libellé, Montant (ou Débit / Crédit). Seules les opérations depuis le 1er du mois dernier sont importées,
+        et les doublons sont ignorés : tu peux réimporter sans risque.
       </p>
       <div>
         <label className="label">Compte</label>
@@ -192,9 +364,14 @@ function ImportModal({ onClose, onImported }) {
 
 export default function Bank({ params = {} }) {
   const { state, dispatch } = useBudget();
-  const { envelopes, transactions, bankTransactions } = state;
+  const { envelopes, transactions, bankTransactions, fixedCharges } = state;
+  const [newCharge, setNewCharge] = useState(null);
   const [status, setStatus] = useState(null);
   const [filter, setFilter] = useState('todo');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState(() => new Set());
+  const [suggestions, setSuggestions] = useState({});
+  const [suggesting, setSuggesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState(
     params.bank === 'ok' ? { ok: true, text: 'Banque connectée ✅ Les opérations ont été récupérées.' }
@@ -204,15 +381,39 @@ export default function Bank({ params = {} }) {
   const [connectOpen, setConnectOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
+  const [statusError, setStatusError] = useState('');
+
+  // L'état de la banque (connexions, connecteur configuré) décide des boutons « Connecter » et
+  // « Synchroniser » : une erreur s'affiche au lieu de les faire disparaître sans explication.
   async function loadStatus() {
-    setStatus(await api.get('/api/bank/status').catch(() => ({ providerConfigured: false, connections: [], accounts: [], rules: [] })));
+    try {
+      setStatus(await api.get('/api/bank/status'));
+      setStatusError('');
+    } catch (err) {
+      setStatus(prev => prev || { providerConfigured: false, connections: [], accounts: [], rules: [] });
+      setStatusError(err.message);
+    }
   }
 
+  async function loadOperations() {
+    try {
+      const [bank, txs, withdrawals] = await Promise.all([api.get('/api/bank/transactions'), api.get('/api/transactions'), api.get('/api/withdrawals')]);
+      dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bank });
+      dispatch({ type: 'SET_TRANSACTIONS', payload: txs });
+      dispatch({ type: 'SET_WITHDRAWALS', payload: withdrawals });
+      dispatch({ type: 'SET_ADVANCES', payload: await api.get('/api/advances').catch(() => []) });
+      return true;
+    } catch (err) {
+      setMessage({ ok: false, text: `Opérations non rechargées : ${err.message}` });
+      return false;
+    }
+  }
+
+  // Chargements indépendants : l'un qui échoue n'empêche pas l'autre
+  // Renvoie false si les opérations n'ont pas pu être rechargées (le message d'erreur est déjà affiché)
   async function refresh() {
-    const [bank, txs] = await Promise.all([fetchBankTransactions(), api.get('/api/transactions')]);
-    dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bank });
-    dispatch({ type: 'SET_TRANSACTIONS', payload: txs });
-    await loadStatus();
+    const [ok] = await Promise.all([loadOperations(), loadStatus()]);
+    return ok;
   }
 
   useEffect(() => { refresh(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -221,36 +422,132 @@ export default function Bank({ params = {} }) {
     setSyncing(true);
     try {
       const r = await api.post('/api/bank/sync');
-      await refresh();
-      setMessage({ ok: true, text: `${r.inserted} nouvelle(s) opération(s), ${r.assigned} classée(s) automatiquement.` });
+      if (!(await refresh())) return;
+      setMessage({
+        ok: true,
+        text: `${r.inserted} nouvelle(s) opération(s), ${r.assigned} classée(s) automatiquement`
+          + (r.withdrawals ? `, ${r.withdrawals} retrait(s) d'espèces enregistré(s).` : '.'),
+      });
     } catch (err) {
       setMessage({ ok: false, text: err.message });
+    } finally {
+      setSyncing(false);
     }
-    setSyncing(false);
   }
 
-  async function assign(b, envelopeId, remember) {
+  async function reloadCharges() {
+    dispatch({ type: 'SET_FIXED_CHARGES', payload: await api.get('/api/charges') });
+  }
+
+  // target : { envelopeId } ou { fixedChargeId }
+  async function assign(b, target, remember) {
     try {
-      const { transaction } = await api.post(`/api/bank/transactions/${b.id}/assign`, { envelopeId, remember });
-      if (remember) {
+      const { transaction } = await api.post(`/api/bank/transactions/${b.id}/assign`, { ...target, remember });
+      if (remember || target.asWithdrawal || target.advance) {
         await refresh();
       } else {
-        dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bankTransactions.map(x => x.id === b.id ? { ...x, envelopeId, transactionId: transaction.id, ignored: false } : x) });
-        dispatch({ type: 'SET_TRANSACTIONS', payload: [transaction, ...transactions.filter(t => t.id !== b.transactionId)] });
+        dispatch({
+          type: 'SET_BANK_TRANSACTIONS',
+          payload: bankTransactions.map(x => x.id === b.id
+            ? { ...x, envelopeId: target.envelopeId || null, fixedChargeId: target.fixedChargeId || null, transactionId: transaction?.id || null, ignored: false }
+            : x),
+        });
+        const rest = transactions.filter(t => t.id !== b.transactionId);
+        dispatch({ type: 'SET_TRANSACTIONS', payload: transaction ? [transaction, ...rest] : rest });
       }
+      if (target.fixedChargeId) await reloadCharges();
     } catch (err) {
       setMessage({ ok: false, text: err.message });
     }
+  }
+
+  async function createChargeAndAssign(form) {
+    try {
+      await api.post('/api/charges', { id: generateId(), ...chargeFromForm(form) }).then(async created => {
+        await assign(newCharge.b, { fixedChargeId: created.id }, newCharge.remember);
+      });
+      setMessage({ ok: true, text: `Charge fixe « ${form.name} » créée et paiement classé.` });
+    } catch (err) {
+      setMessage({ ok: false, text: err.message });
+    }
+    setNewCharge(null);
   }
 
   async function unassign(b) {
     await api.post(`/api/bank/transactions/${b.id}/unassign`);
-    dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bankTransactions.map(x => x.id === b.id ? { ...x, envelopeId: null, transactionId: null } : x) });
+    dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bankTransactions.map(x => x.id === b.id ? { ...x, envelopeId: null, fixedChargeId: null, transactionId: null } : x) });
     dispatch({ type: 'SET_TRANSACTIONS', payload: transactions.filter(t => t.id !== b.transactionId) });
+    if (b.fixedChargeId) await reloadCharges();
+    if (b.withdrawalId || b.advanceId) await refresh();
+  }
+
+  function toggle(id) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function suggest() {
+    setSuggesting(true);
+    try {
+      const r = await api.post('/api/bank/suggest', {});
+      setSuggestions(r.suggestions || {});
+      const n = Object.keys(r.suggestions || {}).length;
+      setMessage({
+        ok: true,
+        text: `${n} suggestion${n > 1 ? 's' : ''} de classement`
+          + (r.aiError ? ' (IA indisponible : seulement les marchands connus)' : '') + '. Vérifie puis accepte.',
+      });
+    } catch (err) {
+      setMessage({ ok: false, text: err.message });
+    }
+    setSuggesting(false);
+  }
+
+  // Accepte toutes les suggestions visibles, regroupées par destination (un appel par destination)
+  async function acceptAllSuggestions(rows) {
+    const groups = {};
+    for (const b of rows) {
+      const sug = suggestions[b.id];
+      if (sug && targetLabel(sug.target, envelopes, fixedCharges)) (groups[sug.target] ||= []).push(b.id);
+    }
+    try {
+      let n = 0;
+      for (const [target, ids] of Object.entries(groups)) {
+        const r = await api.post('/api/bank/transactions/bulk', { ids, ...targetBody(target) });
+        n += r.updated;
+      }
+      setSuggestions({});
+      await refresh();
+      if (Object.keys(groups).some(t => t.startsWith('fix:'))) await reloadCharges();
+      setMessage({ ok: true, text: `${n} opération${n > 1 ? 's' : ''} classée${n > 1 ? 's' : ''}.` });
+    } catch (err) {
+      setMessage({ ok: false, text: err.message });
+    }
+  }
+
+  async function bulkApply(action, remember) {
+    const ids = [...selected];
+    const [kind, id] = action.split(':');
+    const body = action === 'ignore' ? { ids, ignore: true }
+      : action === 'cash' ? { ids, asWithdrawal: true }
+      : kind === 'fix' ? { ids, fixedChargeId: id, remember } : { ids, envelopeId: id, remember };
+    try {
+      const r = await api.post('/api/bank/transactions/bulk', body);
+      setSelected(new Set());
+      await refresh();
+      if (kind === 'fix') await reloadCharges();
+      setMessage({ ok: true, text: `${r.updated} opération${r.updated > 1 ? 's' : ''} ${action === 'ignore' ? 'ignorée' : 'classée'}${r.updated > 1 ? 's' : ''}.` });
+    } catch (err) {
+      setMessage({ ok: false, text: err.message });
+    }
   }
 
   async function ignore(b, ignored) {
     await api.post(`/api/bank/transactions/${b.id}/ignore`, { ignored });
+    if (b.withdrawalId || b.advanceId) return refresh();
     dispatch({ type: 'SET_BANK_TRANSACTIONS', payload: bankTransactions.map(x => x.id === b.id ? { ...x, ignored } : x) });
   }
 
@@ -266,17 +563,22 @@ export default function Bank({ params = {} }) {
   }
 
   const monthStart = periodStart('monthly');
-  const weekSince = periodStart('weekly', { withdrawals: state.withdrawals });
+  const weekSince = periodStart('weekly', { withdrawals: state.withdrawals, savingsHistory: state.savingsHistory });
   const month = useMemo(() => realSpending({ transactions, envelopes, bankTransactions, since: monthStart }), [transactions, envelopes, bankTransactions, monthStart]);
   const week = useMemo(() => realSpending({ transactions, envelopes, bankTransactions, since: weekSince }), [transactions, envelopes, bankTransactions, weekSince]);
   const todoCount = bankTransactions.filter(isTodo).length;
 
+  const query = search.trim().toLowerCase();
   const visible = bankTransactions.filter(b => {
+    if (query && !(b.label || '').toLowerCase().includes(query)) return false;
     if (filter === 'todo') return isTodo(b);
-    if (filter === 'card') return b.isCard && b.amount < 0;
+    if (filter === 'card') return b.amount < 0;
     if (filter === 'ignored') return b.ignored;
     return true;
   });
+  const selectable = visible.filter(b => b.amount < 0);
+  const allSelected = selectable.length > 0 && selectable.every(b => selected.has(b.id));
+  const selectedTotal = bankTransactions.filter(b => selected.has(b.id)).reduce((sum, b) => sum + Math.abs(b.amount), 0);
 
   const hasData = bankTransactions.length > 0 || (status?.accounts?.length ?? 0) > 0;
   const activeConnections = status?.connections?.filter(c => c.status === 'active') || [];
@@ -300,6 +602,13 @@ export default function Bank({ params = {} }) {
         )}
       </PageHeader>
 
+      {statusError && (
+        <div className="text-sm rounded-xl px-4 py-3 flex items-start justify-between gap-3 bg-danger/10 text-danger">
+          <span>Impossible de lire l'état de la banque ({statusError}) : connexion et synchronisation indisponibles pour l'instant.</span>
+          <button onClick={loadStatus} className="font-semibold whitespace-nowrap underline">Réessayer</button>
+        </div>
+      )}
+
       {message && (
         <div className={cn('text-sm rounded-xl px-4 py-3 flex items-start justify-between gap-3', message.ok ? 'bg-savings/10 text-savings' : 'bg-danger/10 text-danger')}>
           <span>{message.text}</span>
@@ -311,7 +620,7 @@ export default function Bank({ params = {} }) {
       <div className="card">
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-semibold text-slate-700">Dépenses du mois</p>
-          <p className="text-2xl font-bold text-slate-800">{fmt(month.total)}</p>
+          <p className="text-2xl font-semibold text-slate-800">{fmt(month.total)}</p>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <SpendTile label="Carte classée" value={month.cardClassified} sub="dans les enveloppes" />
@@ -338,7 +647,7 @@ export default function Bank({ params = {} }) {
                   <p className="font-medium text-slate-700">{a.name || 'Compte'}</p>
                   {a.iban && <p className="text-xs text-slate-400">{a.iban.replace(/(.{4})/g, '$1 ').trim()}</p>}
                 </div>
-                {a.balance != null && <p className="font-bold text-slate-800">{fmtDec(a.balance)}</p>}
+                {a.balance != null && <p className="font-semibold text-slate-800">{fmtDec(a.balance)}</p>}
               </div>
             ))}
             {status.connections.map(c => (
@@ -377,18 +686,78 @@ export default function Bank({ params = {} }) {
             {FILTERS.map(f => (
               <button
                 key={f.id}
-                onClick={() => setFilter(f.id)}
+                onClick={() => { setFilter(f.id); setSelected(new Set()); }}
                 className={cn('flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors', filter === f.id ? 'bg-white text-primary shadow-sm' : 'text-slate-500')}
               >
                 {f.label}{f.id === 'todo' && todoCount > 0 ? ` (${todoCount})` : ''}
               </button>
             ))}
           </div>
+          <div className="flex items-center gap-2 mb-2">
+            <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer flex-shrink-0">
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-primary"
+                checked={allSelected}
+                disabled={!selectable.length}
+                onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map(b => b.id)))}
+              />
+              Tout
+            </label>
+            <div className="relative flex-1">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                className="input py-1.5 pl-7 text-xs"
+                placeholder="Filtrer par libellé (ex. lidl, amazon…)"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+          {filter === 'todo' && todoCount > 0 && selected.size === 0 && (() => {
+            const suggested = visible.filter(b => suggestions[b.id]);
+            return (
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <button onClick={suggest} disabled={suggesting} className="btn-secondary text-xs py-1.5 flex items-center gap-1.5">
+                  <Sparkles size={13} className={suggesting ? 'animate-pulse text-amber-500' : 'text-amber-500'} />
+                  {suggesting ? 'Analyse en cours…' : 'Suggérer un classement'}
+                </button>
+                {suggested.length > 0 && (
+                  <button onClick={() => acceptAllSuggestions(suggested)} className="btn-primary text-xs py-1.5 flex items-center gap-1">
+                    <Check size={13} /> Accepter les {suggested.length} suggestion{suggested.length > 1 ? 's' : ''}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+          {selected.size > 0 && (
+            <BulkBar
+              count={selected.size}
+              total={selectedTotal}
+              envelopes={envelopes}
+              fixedCharges={fixedCharges}
+              onApply={bulkApply}
+              onClear={() => setSelected(new Set())}
+            />
+          )}
           {visible.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-6">{filter === 'todo' ? 'Tout est classé 🎉' : 'Aucune opération'}</p>
           ) : (
             visible.map(b => (
-              <BankRow key={b.id} b={b} envelopes={envelopes} onAssign={assign} onUnassign={unassign} onIgnore={ignore} />
+              <BankRow
+                key={b.id}
+                b={b}
+                envelopes={envelopes}
+                fixedCharges={fixedCharges}
+                selected={selected.has(b.id)}
+                bulkMode={selected.size > 0}
+                suggestion={suggestions[b.id]}
+                onToggle={toggle}
+                onAssign={assign}
+                onUnassign={unassign}
+                onIgnore={ignore}
+                onCreateCharge={(tx, remember) => setNewCharge({ b: tx, remember })}
+              />
             ))
           )}
         </div>
@@ -398,15 +767,16 @@ export default function Bank({ params = {} }) {
       {status?.rules?.length > 0 && (
         <div className="card">
           <p className="text-sm font-semibold text-slate-700 mb-1">Classement automatique</p>
-          <p className="text-xs text-slate-400 mb-2">Les prochains paiements de ces marchands iront directement dans l'enveloppe.</p>
+          <p className="text-xs text-slate-400 mb-2">Les prochains paiements de ces marchands seront classés automatiquement.</p>
           <div className="divide-y divide-slate-50">
             {status.rules.map(r => {
               const env = envelopes.find(e => e.id === r.envelopeId);
+              const fc = fixedCharges.find(c => c.id === r.fixedChargeId);
               return (
                 <div key={r.id} className="flex items-center justify-between py-1.5 text-sm">
                   <span className="text-slate-600">{r.pattern}</span>
                   <span className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500">→ {env ? `${env.icon || ''} ${env.name}` : '—'}</span>
+                    <span className="text-xs text-slate-500">→ {env ? `${env.icon || ''} ${env.name}` : fc ? `📌 ${fc.name}` : '—'}</span>
                     <button onClick={() => removeRule(r.id)} className="p-1 text-slate-300 hover:text-danger"><Trash2 size={12} /></button>
                   </span>
                 </div>
@@ -417,13 +787,19 @@ export default function Bank({ params = {} }) {
       )}
 
       {connectOpen && <ConnectModal onClose={() => setConnectOpen(false)} />}
+      {newCharge && <NewChargeModal b={newCharge.b} onSave={createChargeAndAssign} onClose={() => setNewCharge(null)} />}
       {importOpen && (
         <ImportModal
           onClose={() => setImportOpen(false)}
           onImported={async r => {
             setImportOpen(false);
             await refresh();
-            setMessage({ ok: true, text: `${r.parsed} ligne(s) lue(s), ${r.inserted} nouvelle(s), ${r.assigned} classée(s) automatiquement.` });
+            setMessage({
+              ok: true,
+              text: `${r.parsed} ligne(s) lue(s), ${r.inserted} nouvelle(s), ${r.assigned} classée(s) automatiquement`
+                + (r.withdrawals ? `, ${r.withdrawals} retrait(s) d'espèces enregistré(s)` : '')
+                + (r.skipped ? ` · ${r.skipped} antérieure(s) au ${formatDay(r.from, { day: 'numeric', month: 'long' })} ignorée(s).` : '.'),
+            });
           }}
         />
       )}

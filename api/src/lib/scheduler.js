@@ -2,6 +2,7 @@ const { pool } = require('../db');
 const { sendOnce, layout, appUrl } = require('./mailer');
 const { monthKey, isLastDayOfMonth } = require('./dates');
 const { syncConnection } = require('./bank/sync');
+const { buildMonthlyReport, renderMonthlyReport, shiftMonth } = require('./report');
 
 const eur = v => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v);
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -29,15 +30,66 @@ async function monthEndReminders(now = new Date()) {
          <p>Sans ce relevé, l'historique n'affiche que l'épargne prévue.</p>`,
         { href: appUrl(`/?page=history&close=${month}`), label: 'Enregistrer mon épargne' }
       ),
+      push: {
+        title: `🐷 Dernier jour de ${MONTHS[now.getMonth()]}`,
+        body: 'Note ton épargne réelle et ce qu\'il reste sur le compte.',
+        url: `/?page=history&close=${month}`,
+      },
+    }));
+  }
+}
+
+// Le 1er du mois, à partir de MONTHLY_REPORT_HOUR (9 h) : bilan du mois écoulé par e-mail
+async function monthlyReports(now = new Date()) {
+  if (now.getDate() !== 1 || now.getHours() < (Number(process.env.MONTHLY_REPORT_HOUR) || 9)) return;
+  const month = shiftMonth(monthKey(now), -1);
+  const { rows } = await pool.query(
+    'SELECT user_id FROM profiles WHERE onboarding_done = true AND COALESCE(monthly_report_email, true) = true'
+  );
+  for (const { user_id: userId } of rows) {
+    await sendOnce(userId, 'monthly_report', month, async ({ firstName }) =>
+      renderMonthlyReport(await buildMonthlyReport(userId, month), firstName));
+  }
+}
+
+// Consentement bancaire (180 jours) : rappel 7 jours avant l'expiration, puis connexion marquée expirée
+async function bankExpiryReminders(now = new Date()) {
+  const { rows } = await pool.query(
+    `SELECT * FROM bank_connections
+     WHERE status = 'active' AND valid_until IS NOT NULL AND valid_until <= $1`,
+    [new Date(now.getTime() + 7 * 86400000)]
+  );
+  for (const conn of rows) {
+    const until = new Date(conn.valid_until);
+    if (until <= now) {
+      await pool.query("UPDATE bank_connections SET status = 'expired' WHERE id = $1", [conn.id]);
+      continue;
+    }
+    const days = Math.max(1, Math.ceil((until - now) / 86400000));
+    await sendOnce(conn.user_id, 'bank_expiry', `${conn.id}:${until.toISOString().slice(0, 10)}`, ({ firstName }) => ({
+      subject: `🏦 Connexion ${conn.bank_name || 'bancaire'} : expire dans ${days} jour${days > 1 ? 's' : ''}`,
+      html: layout(
+        'Ta connexion bancaire arrive à expiration',
+        `<p>${firstName ? `${firstName}, l` : 'L'}'accès à <b>${conn.bank_name || 'ta banque'}</b> expire le
+         <b>${until.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}</b> (consentement DSP2 de 180 jours).</p>
+         <p>Après cette date, tes paiements ne seront plus récupérés automatiquement. Reconnecte-la en 1 minute :
+         Banque → Connecter.</p>`,
+        { href: appUrl('/?page=bank'), label: 'Reconnecter ma banque' }
+      ),
+      push: {
+        title: `🏦 Connexion ${conn.bank_name || 'bancaire'} : J-${days}`,
+        body: 'Reconnecte ta banque pour continuer à récupérer tes paiements.',
+        url: '/?page=bank',
+      },
     }));
   }
 }
 
 let lastBankSync = 0;
 
-async function bankAutoSync() {
+async function bankAutoSync({ force = false } = {}) {
   const hours = Number(process.env.BANK_SYNC_INTERVAL_HOURS) || 6;
-  if (Date.now() - lastBankSync < hours * 3600 * 1000) return;
+  if (!force && Date.now() - lastBankSync < hours * 3600 * 1000) return;
   lastBankSync = Date.now();
   const { rows } = await pool.query("SELECT * FROM bank_connections WHERE status = 'active'");
   for (const conn of rows) {
@@ -47,6 +99,8 @@ async function bankAutoSync() {
 
 async function tick() {
   await monthEndReminders().catch(err => console.error('[scheduler] month-end', err.message));
+  await monthlyReports().catch(err => console.error('[scheduler] monthly report', err.message));
+  await bankExpiryReminders().catch(err => console.error('[scheduler] bank expiry', err.message));
   await bankAutoSync().catch(err => console.error('[scheduler] bank', err.message));
 }
 
@@ -55,4 +109,4 @@ function startScheduler() {
   setInterval(tick, 15 * 60 * 1000);
 }
 
-module.exports = { startScheduler, monthEndReminders };
+module.exports = { startScheduler, tick, monthEndReminders, bankExpiryReminders, monthlyReports, bankAutoSync };

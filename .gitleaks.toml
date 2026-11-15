@@ -1,0 +1,16 @@
+# Recherche de secrets (CI) : règles par défaut de Gitleaks, sauf les faux secrets des tests
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Valeurs factices des tests et de la CI (bases jetables, clés générées à l'exécution)"
+paths = [
+  '''^api/test/''',
+  '''^src/test/''',
+  '''^src/.*\.test\.jsx?$''',
+  '''^e2e/''',
+  '''^playwright\.config\.js$''',
+  '''^\.github/workflows/''',
+  '''^\.env\.example$''',
+  '''^api/\.env\.example$''',
+]

@@ -110,8 +110,11 @@ export default function Onboarding() {
     setStep(s => Math.max(0, s - 1));
   }
 
-  function finish() {
-    dispatch({
+  const [saving, setSaving] = useState(false);
+
+  async function finish() {
+    setSaving(true);
+    await dispatch({
       type: 'COMPLETE_ONBOARDING',
       payload: {
         profile: { ...profile, netSalary: Number(profile.netSalary) || 0 },
@@ -135,10 +138,10 @@ export default function Onboarding() {
   const savings = salary - totalCharges - totalEnv;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 to-primary/10 flex flex-col items-center justify-start px-4 pt-10 pb-8">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-start px-4 pt-10 pb-8">
       <div className="w-full max-w-sm">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-2xl font-bold text-primary">MesSous</span>
+          <span className="text-2xl font-semibold text-primary">MesSous</span>
           <span className="text-xs text-slate-400 font-medium">Étape {step + 1}/{TOTAL_STEPS}</span>
         </div>
         <StepBar step={step} />
@@ -147,7 +150,7 @@ export default function Onboarding() {
         {step === 0 && (
           <div className="space-y-5">
             <div>
-              <h2 className="text-2xl font-bold text-slate-800">Bienvenue 👋</h2>
+              <h2 className="text-2xl font-semibold text-slate-800">Bienvenue</h2>
               <p className="text-slate-500 mt-1 text-sm">En quelques étapes, on calcule ton budget personnalisé.</p>
             </div>
             <div>
@@ -177,7 +180,7 @@ export default function Onboarding() {
         {step === 1 && (
           <div className="space-y-5">
             <div>
-              <h2 className="text-2xl font-bold text-slate-800">Ton foyer 🏠</h2>
+              <h2 className="text-2xl font-semibold text-slate-800">Ton foyer</h2>
               <p className="text-slate-500 mt-1 text-sm">Ces infos servent à estimer tes besoins réels.</p>
             </div>
             <div className="card space-y-4">
@@ -221,13 +224,13 @@ export default function Onboarding() {
         {step === 2 && (
           <div className="space-y-5">
             <div>
-              <h2 className="text-2xl font-bold text-slate-800">Ton profil 🎯</h2>
+              <h2 className="text-2xl font-semibold text-slate-800">Ton profil</h2>
               <p className="text-slate-500 mt-1 text-sm">Pour affiner les suggestions de budget.</p>
             </div>
             <div className="card space-y-4">
               {[
                 { key: 'hasCar', label: '🚗 J\'ai une voiture', sub: 'Active l\'enveloppe essence' },
-                { key: 'isSmoker', label: '🚬 Je fume', sub: 'Active l\'enveloppe tabac' },
+                { key: 'isSmoker', label: 'Je fume', sub: 'Active l\'enveloppe tabac' },
               ].map(({ key, label, sub }) => (
                 <button
                   key={key}
@@ -239,14 +242,14 @@ export default function Onboarding() {
                     <p className="text-xs text-slate-400">{sub}</p>
                   </div>
                   <div className={`w-11 h-6 rounded-full transition-colors relative ${profile[key] ? 'bg-primary' : 'bg-slate-200'}`}>
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${profile[key] ? 'left-6' : 'left-1'}`} />
+                    <div className={`absolute top-1 knob w-4 h-4 bg-white rounded-full shadow transition-all ${profile[key] ? 'left-6' : 'left-1'}`} />
                   </div>
                 </button>
               ))}
             </div>
             {profile.isSmoker && (
               <div className="card">
-                <p className="font-medium text-slate-700 mb-3">🚬 Ce que tu fumes</p>
+                <p className="font-medium text-slate-700 mb-3">Ce que tu fumes</p>
                 <TobaccoFields value={profile} onChange={patch => setProfile(p => ({ ...p, ...patch }))} />
               </div>
             )}
@@ -292,7 +295,7 @@ export default function Onboarding() {
         {step === 3 && (
           <div className="space-y-4">
             <div>
-              <h2 className="text-2xl font-bold text-slate-800">Charges fixes 📋</h2>
+              <h2 className="text-2xl font-semibold text-slate-800">Charges fixes</h2>
               <p className="text-slate-500 mt-1 text-sm">Ce qui sort chaque mois, quoi qu'il arrive.</p>
             </div>
             <div className="space-y-2">
@@ -343,12 +346,12 @@ export default function Onboarding() {
             <div className="card bg-slate-50 border-slate-200">
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">Total charges fixes</span>
-                <span className="font-bold text-slate-800">{fmt(totalCharges)}</span>
+                <span className="font-semibold text-slate-800">{fmt(totalCharges)}</span>
               </div>
               {salary > 0 && (
                 <div className="flex justify-between text-sm mt-1">
                   <span className="text-slate-500">Reste pour enveloppes + épargne</span>
-                  <span className={`font-bold ${salary - totalCharges < 0 ? 'text-danger' : 'text-savings'}`}>
+                  <span className={`font-semibold ${salary - totalCharges < 0 ? 'text-danger' : 'text-savings'}`}>
                     {fmt(salary - totalCharges)}
                   </span>
                 </div>
@@ -361,7 +364,7 @@ export default function Onboarding() {
         {step === 4 && (
           <div className="space-y-4">
             <div>
-              <h2 className="text-2xl font-bold text-slate-800">Enveloppes 👛</h2>
+              <h2 className="text-2xl font-semibold text-slate-800">Enveloppes</h2>
               <p className="text-slate-500 mt-1 text-sm">Ajuste les montants suggérés selon tes habitudes.</p>
             </div>
 
@@ -395,7 +398,7 @@ export default function Onboarding() {
               </div>
               <div className="border-t border-slate-100 mt-2 pt-2 flex justify-between">
                 <span className="font-semibold text-slate-700">Épargne disponible</span>
-                <span className={`font-bold text-lg ${savings >= 0 ? 'text-savings' : 'text-danger'}`}>
+                <span className={`font-semibold text-lg ${savings >= 0 ? 'text-savings' : 'text-danger'}`}>
                   {fmt(savings)}
                 </span>
               </div>
@@ -485,9 +488,10 @@ export default function Onboarding() {
           ) : (
             <button
               onClick={finish}
+              disabled={saving}
               className="btn-primary flex-1 flex items-center justify-center gap-2"
             >
-              <Check size={18} /> C'est parti !
+              <Check size={18} /> {saving ? 'Enregistrement…' : "C'est parti !"}
             </button>
           )}
         </div>

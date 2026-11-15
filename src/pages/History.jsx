@@ -2,13 +2,38 @@ import { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { PiggyBank, TrendingUp, Award, ArrowUpRight, CheckCircle2, ClipboardCheck } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
-import { fmt, realSavings } from '../utils/budget';
+import { fmt, realSavings, carryoverFor } from '../utils/budget';
 import { api } from '../api/client';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
+import TrendsCard from '../components/TrendsCard';
 
-function CloseMonthModal({ snap, kakeibo, onSave, onClose }) {
+// Reste de chaque enveloppe (hors épargne) sur le mois : budget + report reçu − dépenses du mois
+function envelopeLeftovers(envelopes, transactions, carryovers, month) {
+  return envelopes
+    .filter(e => e.type !== 'saving')
+    .map(e => {
+      const spent = transactions
+        .filter(t => t.envelopeId === e.id && t.date.startsWith(month))
+        .reduce((s, t) => s + Number(t.amount), 0);
+      const left = Math.round((Number(e.budgetMonthly) + carryoverFor(carryovers, e.id, month) - spent) * 100) / 100;
+      return { env: e, left };
+    })
+    .filter(x => x.left > 0);
+}
+
+function CloseMonthModal({ snap, kakeibo, envelopes, transactions, carryovers, onSave, onClose }) {
   const planned = (snap.programmedSavings || 0) + (snap.savingEnvelopes || 0);
+  const [y, m] = snap.month.split('-').map(Number);
+  const nextMonth = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}`;
+  const leftovers = envelopeLeftovers(envelopes, transactions, carryovers, snap.month);
+  // Reports déjà choisis pour le mois suivant (modification d'une clôture), sinon aucun
+  const [carry, setCarry] = useState(() => Object.fromEntries(
+    leftovers.map(({ env }) => [env.id, carryoverFor(carryovers, env.id, nextMonth) || ''])
+  ));
+  // Case cochée séparée du montant : vider le champ pour retaper un montant ne décoche pas
+  const [checked, setChecked] = useState(() => new Set(Object.keys(carry).filter(id => Number(carry[id]) > 0)));
+  const carryTotal = [...checked].reduce((s, id) => s + (Number(carry[id]) || 0), 0);
   const [form, setForm] = useState({
     actualSavings: snap.actualSavings ?? planned,
     actualRemainder: snap.actualRemainder ?? Math.max(0, snap.remainder || 0),
@@ -36,6 +61,7 @@ function CloseMonthModal({ snap, kakeibo, onSave, onClose }) {
               actualRemainder: Number(form.actualRemainder) || 0,
               remainderToGoalId: form.remainderToGoalId || null,
               review: form.review.trim(),
+              carryovers: Object.entries(carry).map(([envelopeId, amount]) => ({ envelopeId, amount: checked.has(envelopeId) ? Number(amount) || 0 : 0 })),
             })}
           >Enregistrer</button>
         </>
@@ -56,6 +82,48 @@ function CloseMonthModal({ snap, kakeibo, onSave, onClose }) {
           onChange={e => setForm(f => ({ ...f, actualRemainder: e.target.value }))} />
         <p className="text-xs text-slate-400 mt-1">Ce qu'il reste réellement sur le compte · prévu : {fmt(Math.max(0, snap.remainder || 0))}</p>
       </div>
+      {leftovers.length > 0 && (
+        <div>
+          <label className="label">Reporter des restes d'enveloppes sur {formatMonthLong(nextMonth)}</label>
+          <p className="text-xs text-slate-400 mb-2">Le montant reporté s'ajoute au budget de l'enveloppe le mois suivant (ex. vacances, cadeaux).</p>
+          <div className="space-y-1.5">
+            {leftovers.map(({ env, left }) => {
+              const on = checked.has(env.id);
+              return (
+                <div key={env.id} className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 flex-1 min-w-0 text-sm text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 accent-primary"
+                      checked={on}
+                      onChange={() => {
+                        setChecked(prev => {
+                          const next = new Set(prev);
+                          if (on) next.delete(env.id); else next.add(env.id);
+                          return next;
+                        });
+                        if (!on) setCarry(c => ({ ...c, [env.id]: left }));
+                      }}
+                    />
+                    <span className="truncate">{env.icon || ''} {env.name}</span>
+                    <span className="text-xs text-slate-400 flex-shrink-0">reste {fmt(left)}</span>
+                  </label>
+                  {on && (
+                    <input
+                      className="input py-1 w-24 text-sm"
+                      type="number"
+                      min="0"
+                      value={carry[env.id]}
+                      onChange={e => setCarry(c => ({ ...c, [env.id]: e.target.value }))}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {carryTotal > 0 && <p className="text-xs text-savings mt-1.5">{fmt(carryTotal)} reportés sur {formatMonthLong(nextMonth)}</p>}
+        </div>
+      )}
       {goals.length > 0 && Number(form.actualRemainder) > 0 && (
         <div>
           <label className="label">Que faire du reste ?</label>
@@ -77,7 +145,7 @@ function CloseMonthModal({ snap, kakeibo, onSave, onClose }) {
       </div>
       <div className="bg-savings/5 rounded-xl p-3 flex justify-between items-center">
         <span className="text-sm text-slate-600">Épargne réelle du mois</span>
-        <span className="text-xl font-bold text-savings">{fmt(total)}</span>
+        <span className="text-xl font-semibold text-savings">{fmt(total)}</span>
       </div>
     </Modal>
   );
@@ -104,8 +172,8 @@ function StatCard({ icon: Icon, label, value, sub, color = 'text-savings' }) {
   return (
     <div className="card text-center py-4">
       <Icon size={18} className={`${color} mx-auto mb-1`} />
-      <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">{label}</p>
-      <p className={`text-xl font-bold mt-1 ${color}`}>{value}</p>
+      <p className="text-xs text-slate-400 font-semibold">{label}</p>
+      <p className={`text-xl font-semibold mt-1 ${color}`}>{value}</p>
       {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
     </div>
   );
@@ -126,7 +194,7 @@ const CustomTooltip = ({ active, payload, label }) => {
       ))}
       <div className="border-t border-slate-100 mt-1.5 pt-1.5 flex justify-between text-xs">
         <span className="text-slate-500">Total planifié</span>
-        <span className="font-bold text-savings">{fmt(total)}</span>
+        <span className="font-semibold text-savings">{fmt(total)}</span>
       </div>
     </div>
   );
@@ -183,6 +251,8 @@ export default function History({ params = {} }) {
           <ClipboardCheck size={15} /> {currentSnap?.closedAt ? 'Modifier la clôture' : 'Clôturer le mois'}
         </button>
       </PageHeader>
+
+      <TrendsCard transactions={transactions} envelopes={envelopes} />
 
       {history.length === 0 ? (
         <div className="text-center py-16 text-slate-400">
@@ -255,15 +325,15 @@ export default function History({ params = {} }) {
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-slate-700 text-sm">{formatMonthLong(snap.month)}</p>
                         {isCurrentMonth && !snap.closedAt && (
-                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">en cours · prévisionnel</span>
+                          <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">en cours · prévisionnel</span>
                         )}
                         {snap.closedAt && (
-                          <span className="text-[10px] bg-savings/10 text-savings px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5"><CheckCircle2 size={10} /> clôturé</span>
+                          <span className="text-xs bg-savings/10 text-savings px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5"><CheckCircle2 size={10} /> clôturé</span>
                         )}
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-savings">{fmt(real ?? snap.totalSavings)}</p>
-                        {real != null && <p className="text-[10px] text-slate-400">prévu {fmt(snap.totalSavings)}</p>}
+                        <p className="font-semibold text-savings">{fmt(real ?? snap.totalSavings)}</p>
+                        {real != null && <p className="text-xs text-slate-400">prévu {fmt(snap.totalSavings)}</p>}
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-400">
@@ -313,7 +383,7 @@ export default function History({ params = {} }) {
                       <div className="mt-1.5 flex items-center gap-1.5 text-xs">
                         <ArrowUpRight size={12} className="text-emerald-600" />
                         <span className="text-slate-500">Réellement viré :</span>
-                        <span className="font-bold text-emerald-600">{fmt(actualTransferred)}</span>
+                        <span className="font-semibold text-emerald-600">{fmt(actualTransferred)}</span>
                         {snap.totalSavings > 0 && (
                           <span className="text-slate-400">
                             ({Math.round((actualTransferred / snap.totalSavings) * 100)}% du planifié)
@@ -334,6 +404,9 @@ export default function History({ params = {} }) {
         <CloseMonthModal
           snap={closingSnap}
           kakeibo={state.settings.budgetRule === 'kakeibo'}
+          envelopes={state.envelopes}
+          transactions={state.transactions}
+          carryovers={state.carryovers}
           onClose={() => setClosing(null)}
           onSave={payload => { dispatch({ type: 'CLOSE_MONTH', payload }); setClosing(null); }}
         />

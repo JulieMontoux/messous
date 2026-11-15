@@ -9,6 +9,8 @@ const defaultState = {
   savingsHistory: [],
   withdrawals: [],
   bankTransactions: [],
+  carryovers: [],
+  advances: [],
   settings: { viewMode: 'monthly', budgetRule: '50-30-20' },
 };
 
@@ -33,10 +35,20 @@ function reducer(state, action) {
       const snap = action.payload;
       const prev = state.savingsHistory.find(s => s.month === snap.month);
       const existing = state.savingsHistory.filter(s => s.month !== snap.month);
+      const { carryovers: carry, ...snapData } = snap;
       const merged = action.type === 'CLOSE_MONTH'
-        ? { ...prev, ...snap, month: snap.month, closedAt: new Date().toISOString() }
-        : { ...prev, ...snap };
-      return { ...state, savingsHistory: [...existing, merged].sort((a, b) => a.month.localeCompare(b.month)) };
+        ? { ...prev, ...snapData, month: snap.month, closedAt: new Date().toISOString() }
+        : { ...prev, ...snapData };
+      let carryovers = state.carryovers;
+      if (action.type === 'CLOSE_MONTH' && Array.isArray(carry)) {
+        const [y, m] = snap.month.split('-').map(Number);
+        const next = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}`;
+        carryovers = [
+          ...carryovers.filter(c => c.month !== next),
+          ...carry.filter(c => c.amount > 0).map(c => ({ envelopeId: c.envelopeId, month: next, amount: c.amount })),
+        ];
+      }
+      return { ...state, carryovers, savingsHistory: [...existing, merged].sort((a, b) => a.month.localeCompare(b.month)) };
     }
 
     case 'ADD_WITHDRAWAL':
@@ -48,6 +60,18 @@ function reducer(state, action) {
     // Actions locales (la synchronisation est faite par l'appelant)
     case 'SET_BANK_TRANSACTIONS':
       return { ...state, bankTransactions: action.payload };
+
+    case 'SET_PROFILE':
+      return { ...state, profile: { ...state.profile, ...action.payload } };
+
+    case 'SET_ADVANCES':
+      return { ...state, advances: action.payload };
+
+    case 'SET_WITHDRAWALS':
+      return { ...state, withdrawals: action.payload };
+
+    case 'SET_FIXED_CHARGES':
+      return { ...state, fixedCharges: action.payload };
 
     case 'SET_TRANSACTIONS':
       return { ...state, transactions: action.payload };
@@ -113,8 +137,14 @@ async function syncToApi(action) {
       const { profile, fixedCharges, envelopes } = action.payload;
       const regDate = new Date().toISOString();
       await api.put('/api/profile', { ...toApiProfile(profile), onboardingDone: true, registrationDate: regDate });
-      await Promise.all(fixedCharges.map(c => api.post('/api/charges', c)));
-      await Promise.all(envelopes.map(e => api.post('/api/envelopes', e)));
+      // Un par un (pas de rafale de requêtes) et sans s'arrêter au premier échec
+      let failed = 0;
+      for (const [path, items] of [['/api/charges', fixedCharges], ['/api/envelopes', envelopes]]) {
+        for (const item of items) {
+          await api.post(path, item).catch(() => { failed += 1; });
+        }
+      }
+      if (failed) throw new Error(`${failed} élément(s) du démarrage non enregistré(s) — recharge la page pour vérifier`);
       break;
     }
 
@@ -170,27 +200,40 @@ const BudgetContext = createContext(null);
 export function BudgetProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, defaultState);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
-  useEffect(() => {
+  // Si le chargement échoue, on ne bascule PAS sur l'état par défaut :
+  // il afficherait l'onboarding et pourrait écraser le profil existant.
+  const load = useCallback(() => {
+    setLoadError('');
+    setReady(false);
     fetchAll()
       .then(data => {
         dispatch({ type: 'LOAD_STATE', payload: data });
         setReady(true);
       })
-      .catch(() => setReady(true));
+      .catch(err => setLoadError(err.message || 'Serveur injoignable'));
   }, []);
 
+  useEffect(() => { load(); }, [load]);
+
   const apiDispatch = useCallback((action) => {
-    dispatch(action);
-    syncToApi(action).catch(err => {
+    const onError = err => {
       console.error('[API sync]', action.type, err.message);
       // Affiche un bandeau d'erreur visible si la sauvegarde échoue
       window.dispatchEvent(new CustomEvent('messous:sync-error', { detail: err.message }));
-    });
+    };
+    // Fin du démarrage : on enregistre tout AVANT d'ouvrir l'application, sinon un rechargement
+    // pendant l'enregistrement perdrait des charges ou des enveloppes
+    if (action.type === 'COMPLETE_ONBOARDING') {
+      return syncToApi(action).catch(onError).finally(() => dispatch(action));
+    }
+    dispatch(action);
+    return syncToApi(action).catch(onError);
   }, []);
 
   return (
-    <BudgetContext.Provider value={{ state, dispatch: apiDispatch, ready }}>
+    <BudgetContext.Provider value={{ state, dispatch: apiDispatch, ready, loadError, reload: load }}>
       {children}
     </BudgetContext.Provider>
   );

@@ -21,7 +21,8 @@ router.post('/suggestions', async (req, res) => {
   try {
     const [profileRes, chargesRes, envelopesRes, txRes, savingsRes, trendsRes] = await Promise.all([
       pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]),
-      pool.query('SELECT * FROM fixed_charges WHERE user_id = $1', [userId]),
+      // Charges terminées (mois de fin dépassé) exclues
+      pool.query("SELECT * FROM fixed_charges WHERE user_id = $1 AND (end_month IS NULL OR end_month >= TO_CHAR(NOW(), 'YYYY-MM'))", [userId]),
       pool.query('SELECT * FROM envelopes WHERE user_id = $1', [userId]),
       pool.query('SELECT * FROM transactions WHERE user_id = $1 ORDER BY date DESC LIMIT 60', [userId]),
       pool.query('SELECT * FROM savings_history WHERE user_id = $1 ORDER BY month DESC LIMIT 6', [userId]),
@@ -45,7 +46,8 @@ router.post('/suggestions', async (req, res) => {
     const trendsRows = trendsRes.rows;
 
     const salary = Number(profile.net_salary) || 0;
-    const totalFixed = charges.reduce((s, c) => s + Number(c.amount), 0);
+    const perMonth = c => Number(c.amount) / ({ yearly: 12, quarterly: 3 }[c.frequency] || 1);
+    const totalFixed = Math.round(charges.reduce((s, c) => s + perMonth(c), 0));
     const totalEnv = envelopes.filter(e => e.type !== 'saving').reduce((s, e) => s + Number(e.budget_monthly), 0);
     const totalSaving = envelopes.filter(e => e.type === 'saving').reduce((s, e) => s + Number(e.budget_monthly), 0);
     const remainder = salary - totalFixed - totalEnv - totalSaving;
@@ -144,7 +146,10 @@ router.post('/budget-method', async (req, res) => {
 
     const { rows: [profile] } = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [req.user.userId]);
     if (!profile) return res.status(400).json({ error: 'Profil introuvable' });
-    const { rows: charges } = await pool.query('SELECT name, category_id, amount FROM fixed_charges WHERE user_id = $1', [req.user.userId]);
+    const { rows: charges } = await pool.query(
+      "SELECT name, category_id, amount, frequency FROM fixed_charges WHERE user_id = $1 AND (end_month IS NULL OR end_month >= TO_CHAR(NOW(), 'YYYY-MM'))",
+      [req.user.userId]
+    );
 
     const prompt = buildMethodPrompt(profile, charges, comparison, rules, { currentRuleId, includeFixed, best });
     const ollamaUrl = process.env.OLLAMA_URL || 'http://ollama:11434';
@@ -174,16 +179,18 @@ router.post('/budget-method', async (req, res) => {
       months: comparison.months,
     });
   } catch (err) {
+    // 502 / 504 et pas 503 : le client réessaie les 503, ce qui relancerait une analyse de plusieurs minutes
     const isTimeout = err.name === 'TimeoutError' || err.name === 'AbortError';
-    res.status(isTimeout ? 504 : 503).json({ error: err.message });
+    res.status(isTimeout ? 504 : 502).json({ error: err.message });
   }
 });
 
 function buildMethodPrompt(profile, charges, comparison, rules, { currentRuleId, includeFixed, best }) {
   const n = v => Math.round(Number(v) || 0);
   const salary = n(profile.net_salary);
-  const loans = charges.filter(c => c.category_id === 'loan').reduce((s, c) => s + Number(c.amount), 0);
-  const fixed = charges.filter(c => c.category_id !== 'savings').reduce((s, c) => s + Number(c.amount), 0);
+  const perMonth = c => Number(c.amount) / ({ yearly: 12, quarterly: 3 }[c.frequency] || 1);
+  const loans = charges.filter(c => c.category_id === 'loan').reduce((s, c) => s + perMonth(c), 0);
+  const fixed = charges.filter(c => c.category_id !== 'savings').reduce((s, c) => s + perMonth(c), 0);
 
   const monthLines = (comparison.perMonth || []).slice(0, 6)
     .map(m => `  - ${String(m.month).slice(0, 7)} : besoins ${n(m.needs)}€, envies ${n(m.wants)}€, épargne versée ${n(m.savings)}€`)
@@ -228,7 +235,7 @@ function buildPrompt(profile, charges, envelopes, spentByEnv, savingsHistory, tr
   const savingsRate = salary > 0 ? Math.round((totalSaving / salary) * 100) : 0;
 
   const chargeLines = charges.length
-    ? charges.map(c => `  - ${c.name}: ${Number(c.amount)}€`).join('\n')
+    ? charges.map(c => `  - ${c.name}: ${Number(c.amount)}€${c.frequency === 'yearly' ? ' par an' : c.frequency === 'quarterly' ? ' par trimestre' : ''}`).join('\n')
     : '  (aucune)';
 
   const envLines = envelopes.length

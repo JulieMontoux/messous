@@ -1,221 +1,159 @@
 import { describe, it, expect } from 'vitest';
 import {
-  budgetRuleBreakdown, recommendBudgetRule, BUDGET_RULES, historyAverages, ruleFitScore, budgetMethodComparison,
+  totalFixed, totalFixedExSavings, totalProgrammedSavings, totalExpenseEnvelopes, totalSavingEnvelopesBudget,
+  computedSavings, totalSavings, budgetHealth, donutData, weeklyAmount, weeklyToMonthly, realSpending,
+  isBankTodo, chargeFromForm, monthEndForecast, idealSplit, realSavings, spentInPeriod,
 } from './budget';
+import { roundUpTo, computeWithdrawal, cashInHand } from './withdrawal';
+import { suggestEnvelopes, tobaccoMonthlyBudget, TOBACCO_TYPES } from '../data/defaults';
+import { periodStart } from './period';
 
 const charges = [
-  { categoryId: 'housing', amount: 700 },
-  { categoryId: 'savings', amount: 100 },
+  { amount: 700, categoryId: 'housing' },
+  { amount: 120, categoryId: 'insurance', frequency: 'yearly', dueMonth: 3 },
+  { amount: 100, categoryId: 'savings' },
+  { amount: 250, categoryId: 'loan', endMonth: '2020-01' },
 ];
 const envelopes = [
-  { id: 'g', type: 'need', categoryId: 'groceries', budgetMonthly: 300 },
-  { id: 'r', type: 'want', categoryId: 'restaurant', budgetMonthly: 150 },
-  { id: 'v', type: 'want', categoryId: 'vacation', budgetMonthly: 80 },
-  { id: 'l', type: 'saving', categoryId: 'livret', budgetMonthly: 200 },
-  { id: 'a', type: 'saving', categoryId: 'assurance_vie', budgetMonthly: 150 },
+  { id: 'n', type: 'need', budgetMonthly: 300 },
+  { id: 'w', type: 'want', budgetMonthly: 200 },
+  { id: 's', type: 'saving', budgetMonthly: 150 },
 ];
-// salaire 2000 → reste du mois = 2000 − 800 − 880 = 320
-const byKey = res => Object.fromEntries(res.rows.map(r => [r.key, r]));
 
-describe('budgetRuleBreakdown', () => {
-  it('avec charges fixes (défaut) : base = salaire, charges dans les besoins', () => {
-    const res = budgetRuleBreakdown('50-30-20', 2000, charges, envelopes);
-    expect(res.base).toBe(2000);
-    const r = byKey(res);
-    expect(r.needs).toMatchObject({ actual: 700 + 300, ideal: 1000 });
-    expect(r.wants).toMatchObject({ actual: 230, ideal: 600 });
-    expect(r.savings).toMatchObject({ actual: 350 + 100 + 320, ideal: 400 });
+describe('totaux du budget', () => {
+  it('charges : équivalent mensuel, épargne programmée à part, charges terminées exclues', () => {
+    expect(totalFixed(charges)).toBe(810);
+    expect(totalFixedExSavings(charges)).toBe(710);
+    expect(totalProgrammedSavings(charges)).toBe(100);
   });
-
-  it('sans charges fixes : base = salaire − charges fixes, seules les enveloppes comptent', () => {
-    const res = budgetRuleBreakdown('50-30-20', 2000, charges, envelopes, { includeFixed: false });
-    expect(res.base).toBe(1200);
-    const r = byKey(res);
-    expect(r.needs).toMatchObject({ actual: 300, ideal: 600 });
-    expect(r.wants).toMatchObject({ actual: 230, ideal: 360 });
-    expect(r.savings).toMatchObject({ actual: 350 + 320, ideal: 240 });
+  it('enveloppes : dépenses vs épargne', () => {
+    expect(totalExpenseEnvelopes(envelopes)).toBe(500);
+    expect(totalSavingEnvelopesBudget(envelopes)).toBe(150);
   });
-
-  it('55/10/5/15/15 : voyages et long terme séparés', () => {
-    const res = budgetRuleBreakdown('55-10-5-15-15', 2000, charges, envelopes);
-    expect(res.base).toBe(2000);
-    const r = byKey(res);
-    expect(r.essentials).toMatchObject({ actual: 700 + 300, ideal: 1100 });
-    expect(r.pleasure).toMatchObject({ actual: 150, ideal: 200 });
-    expect(r.travel).toMatchObject({ actual: 80, ideal: 100 });
-    expect(r.shortTerm).toMatchObject({ actual: 200 + 100 + 320, ideal: 300 });
-    expect(r.longTerm).toMatchObject({ actual: 150, ideal: 300 });
-    expect(res.rows.reduce((s, x) => s + x.pct, 0)).toBeCloseTo(1);
+  it('reste et épargne totale', () => {
+    expect(computedSavings(2000, charges, envelopes)).toBe(2000 - 810 - 650);
+    expect(totalSavings(2000, charges, envelopes)).toBe(100 + 150 + 540);
+    expect(totalSavings(1000, charges, envelopes)).toBe(250, 'un déficit ne réduit pas l\'épargne programmée');
   });
-
-  it('55/10/5/15/15 sans charges fixes', () => {
-    const r = byKey(budgetRuleBreakdown('55-10-5-15-15', 2000, charges, envelopes, { includeFixed: false }));
-    expect(r.essentials).toMatchObject({ actual: 300, ideal: 660 });
-    expect(r.shortTerm).toMatchObject({ actual: 200 + 320, ideal: 180 });
+  it('santé du budget selon la part du reste', () => {
+    expect(budgetHealth(0, charges, envelopes)).toBe('unknown');
+    expect(budgetHealth(5000, charges, envelopes)).toBe('great');
+    expect(budgetHealth(1600, charges, envelopes)).toBe('tight');
+    expect(budgetHealth(1000, charges, envelopes)).toBe('deficit');
   });
-
-  it('règle inconnue → 50/30/20, base nulle → null', () => {
-    expect(budgetRuleBreakdown('nope', 2000, charges, envelopes).rule.label).toBe('50/30/20');
-    expect(budgetRuleBreakdown('55-10-5-15-15', 0, charges, envelopes)).toBeNull();
-    expect(budgetRuleBreakdown('50-30-20', 800, charges, envelopes, { includeFixed: false })).toBeNull();
+  it('répartition : déficit affiché comme tel', () => {
+    const d = donutData(1000, charges, envelopes);
+    expect(d.find(x => x.name === 'Déficit').value).toBe(460);
+    expect(d.find(x => x.name === 'Reste du mois')).toBeUndefined();
+    expect(donutData(0, charges, envelopes)).toEqual([]);
+  });
+  it('conversions semaine / mois', () => {
+    expect(weeklyAmount(433)).toBe(100);
+    expect(weeklyToMonthly(100)).toBe(433);
   });
 });
 
-describe('recommendBudgetRule', () => {
-  const env = (type, budgetMonthly) => ({ type, budgetMonthly, categoryId: 'other' });
-
-  it('envies élevées, charges raisonnables → 50/30/20 avec charges fixes', () => {
-    const r = recommendBudgetRule(3000, [{ categoryId: 'housing', amount: 900 }], [env('need', 400), env('want', 700)]);
-    expect(r).toMatchObject({ ruleId: '50-30-20', includeFixed: true });
-    expect(r.reasons).toHaveLength(2);
-  });
-
-  it('envies faibles → 55/10/5/15/15', () => {
-    const r = recommendBudgetRule(3000, [{ categoryId: 'housing', amount: 900 }], [env('need', 400), env('want', 300)]);
-    expect(r).toMatchObject({ ruleId: '55-10-5-15-15', includeFixed: true });
-  });
-
-  it('besoins > 50 % → 55/10/5/15/15', () => {
-    const r = recommendBudgetRule(2000, [{ categoryId: 'housing', amount: 800 }], [env('need', 400), env('want', 500)]);
-    expect(r.ruleId).toBe('55-10-5-15-15');
-  });
-
-  it('charges fixes ≥ 45 % → calcul sans les charges fixes', () => {
-    const r = recommendBudgetRule(1600, [{ categoryId: 'housing', amount: 800 }], [env('need', 200), env('want', 300)]);
-    expect(r.includeFixed).toBe(false);
-  });
-
-  it('salaire nul → valeurs par défaut', () => {
-    expect(recommendBudgetRule(0, [], [])).toEqual({ ruleId: '50-30-20', includeFixed: true, reasons: [] });
-  });
-});
-
-describe('budgetRuleBreakdown : autres méthodes', () => {
-  const ch = [
-    { categoryId: 'housing', amount: 600 },
-    { categoryId: 'loan', amount: 200 },
-    { categoryId: 'savings', amount: 100 },
-  ];
-  const envs = [
-    { id: 'g', type: 'need', categoryId: 'groceries', budgetMonthly: 300 },
-    { id: 'i', type: 'need', categoryId: 'unexpected', budgetMonthly: 50 },
-    { id: 'r', type: 'want', categoryId: 'restaurant', budgetMonthly: 150 },
-    { id: 'e', type: 'want', categoryId: 'education', budgetMonthly: 40 },
-    { id: 'd', type: 'want', categoryId: 'donations', budgetMonthly: 30 },
-    { id: 'l', type: 'saving', categoryId: 'livret', budgetMonthly: 100 },
-    { id: 'a', type: 'saving', categoryId: 'assurance_vie', budgetMonthly: 80 },
-    { id: 'p', type: 'saving', categoryId: 'retirement', budgetMonthly: 50 },
-  ];
-  // salaire 2500 → charges 900, enveloppes 800, reste du mois 800
-  const run = (id, opts) => byKey(budgetRuleBreakdown(id, 2500, ch, envs, opts));
-
-  it('toutes les règles en pourcentages font 100 %', () => {
-    for (const [id, rule] of Object.entries(BUDGET_RULES)) {
-      if (rule.zeroBased || rule.kakeibo) continue;
-      expect(rule.rows.reduce((s, r) => s + r.pct, 0), id).toBeCloseTo(1);
+describe('opérations bancaires', () => {
+  const base = { amount: -10, ignored: false, envelopeId: null, fixedChargeId: null, withdrawalId: null, advanceId: null };
+  it('à classer : cartes et prélèvements, pas les virements reçus ni les opérations déjà traitées', () => {
+    expect(isBankTodo({ ...base, isCard: true })).toBe(true);
+    expect(isBankTodo({ ...base, isCard: false, label: 'PRLV SEPA EDF' })).toBe(true);
+    expect(isBankTodo({ ...base, isCard: false, label: 'VIR M. DUPONT' })).toBe(false);
+    expect(isBankTodo({ ...base, isCard: true, amount: 20 })).toBe(false);
+    for (const k of ['envelopeId', 'fixedChargeId', 'withdrawalId', 'advanceId']) {
+      expect(isBankTodo({ ...base, isCard: true, [k]: 'x' })).toBe(false);
     }
+    expect(isBankTodo({ ...base, isCard: true, ignored: true })).toBe(false);
   });
-
-  it('80/20', () => {
-    const r = run('80-20');
-    expect(r.savings).toMatchObject({ actual: 230 + 100 + 800, ideal: 500 });
-    expect(r.spending).toMatchObject({ actual: 800 + 570, ideal: 2000 });
-  });
-
-  it('70/20/10 : crédits et dons dans la ligne dettes', () => {
-    const r = run('70-20-10');
-    expect(r.living).toMatchObject({ actual: 600 + 540, ideal: 1750 });
-    expect(r.debts).toMatchObject({ actual: 200 + 30, ideal: 250 });
-    expect(run('70-20-10', { includeFixed: false }).debts.actual).toBe(30);
-  });
-
-  it('solution des 60 %', () => {
-    const r = run('sixty');
-    expect(r.committed).toMatchObject({ actual: 800 + 350, ideal: 1500 });
-    expect(r.retirement.actual).toBe(50);
-    expect(r.longTerm.actual).toBe(80);
-    expect(r.shortTerm.actual).toBe(100 + 100 + 800);
-    expect(r.fun.actual).toBe(220);
-  });
-
-  it('6 jarres', () => {
-    const r = run('six-jars');
-    expect(r.freedom.actual).toBe(130);
-    expect(r.education.actual).toBe(40);
-    expect(r.play.actual).toBe(150);
-    expect(r.give).toMatchObject({ actual: 30, ideal: 125 });
-  });
-
-  it('base zéro : reste à affecter, pas d\'objectif', () => {
-    const res = budgetRuleBreakdown('zero-based', 2500, ch, envs);
-    expect(res.toAssign).toBe(800);
-    const r = byKey(res);
-    expect(r.fixed.actual).toBe(800);
-    expect(r.savings).toMatchObject({ actual: 230 + 100, ideal: null, diff: null });
-    expect(byKey(budgetRuleBreakdown('zero-based', 2500, ch, envs, { includeFixed: false })).fixed).toBeUndefined();
-  });
-
-  it('Kakeibo : 4 catégories + objectif d\'épargne', () => {
-    const r = run('kakeibo');
-    expect(r.survival.actual).toBe(800 + 300);
-    expect(r.unexpected.actual).toBe(50);
-    expect(r.culture.actual).toBe(40);
-    expect(r.leisure.actual).toBe(180);
-    expect(r.savings.ideal).toBe(250);
-    expect(run('kakeibo', { savingsGoal: 400 }).savings.ideal).toBe(400);
-  });
-
-  it('crédits ≥ 10 % → 70/20/10 conseillée', () => {
-    expect(recommendBudgetRule(1900, ch, envs).ruleId).toBe('70-20-10'); // crédits 200 / 1900 ≈ 11 %
-    expect(recommendBudgetRule(2500, ch, envs).ruleId).not.toBe('70-20-10'); // 8 %
+  it('dépenses réelles : une avance n\'est pas une dépense', () => {
+    const r = realSpending({
+      since: '2026-11-01', envelopes: [], transactions: [],
+      bankTransactions: [{ ...base, date: '2026-11-02', isCard: true, advanceId: 'a', amount: -60 }],
+    });
+    expect(r.total).toBe(0);
   });
 });
 
-describe('historique et comparaison des méthodes', () => {
-  const now = new Date(2026, 10, 15); // novembre 2026 → mois complets : oct., sept., août
-  const envs = [
-    { id: 'g', type: 'need', categoryId: 'groceries', budgetMonthly: 999 },
-    { id: 'r', type: 'want', categoryId: 'restaurant', budgetMonthly: 999 },
-    { id: 'l', type: 'saving', categoryId: 'livret', budgetMonthly: 999 },
+describe('formulaire de charge fixe', () => {
+  it('saisie hebdomadaire convertie en mensuel', () => {
+    expect(chargeFromForm({ amount: '70', frequency: 'weekly', dueMonth: 3, endMonth: '' }))
+      .toMatchObject({ amount: 303.1, frequency: 'monthly', dueMonth: null, endMonth: null });
+  });
+  it('annuelle : mois d\'échéance conservé, fin prévue gardée', () => {
+    expect(chargeFromForm({ amount: '120', frequency: 'yearly', dueMonth: '10', endMonth: '2027-06' }))
+      .toMatchObject({ amount: 120, dueMonth: 10, endMonth: '2027-06' });
+  });
+});
+
+describe('tabac et suggestions d\'enveloppes', () => {
+  it('budget mensuel par type (52 semaines / 12 mois)', () => {
+    expect(tobaccoMonthlyBudget({ tobaccoType: 'indus', tobaccoPackPrice: 12, tobaccoPacksPerWeek: 7 })).toBe(364);
+    expect(tobaccoMonthlyBudget({ tobaccoType: 'roule', tobaccoPacksPerWeek: 2 })).toBe(Math.round(TOBACCO_TYPES[1].defaultPrice * 2 * 52 / 12));
+  });
+  it('suggestions : tabac seulement si fumeur, d\'après le profil', () => {
+    const base = { netSalary: 2500, householdAdults: 1, householdChildren: 0, pets: {}, hasCar: false, supermarket: 'lidl' };
+    expect(suggestEnvelopes({ ...base, isSmoker: false }).tobacco).toBe(0);
+    expect(suggestEnvelopes({ ...base, isSmoker: true, tobaccoPackPrice: 12, tobaccoPacksPerWeek: 7 }).tobacco).toBe(370);
+    expect(suggestEnvelopes(base).fuel).toBe(0);
+    expect(suggestEnvelopes(base).transport).toBeGreaterThan(0);
+  });
+});
+
+describe('arrondis', () => {
+  it('pas d\'erreur de virgule flottante', () => {
+    expect(roundUpTo(0.1 + 0.2 + 9.7, 10)).toBe(10);
+    expect(roundUpTo(20.000000001, 10)).toBe(20);
+    expect(roundUpTo(16.6, 1)).toBe(17);
+    expect(roundUpTo(0, 10)).toBe(0);
+  });
+  it('espèces en poche jamais négatives', () => {
+    expect(cashInHand(50, 80)).toBe(0);
+    expect(cashInHand(undefined, undefined)).toBe(0);
+  });
+});
+
+describe('retrait hebdo calé sur un retrait, mois précédent clôturé (calcul réel, sans simulation)', () => {
+  const now = new Date(2026, 10, 2); // lundi 2 novembre
+  const withdrawals = [{ date: '2026-10-29', amount: 100 }];
+  const savingsHistory = [{ month: '2026-10', closedAt: '2026-10-31T20:00:00Z' }];
+  const transactions = [
+    { envelopeId: 'n', amount: 60, date: '2026-10-30', paymentMethod: 'cash' }, // octobre clôturé : ignoré
+    { envelopeId: 'n', amount: 20, date: '2026-11-01', paymentMethod: 'card' },
   ];
-  const tx = [
-    { envelopeId: 'g', date: '2026-10-03', amount: 300 },
-    { envelopeId: 'g', date: '2026-09-03', amount: 500 },
-    { envelopeId: 'r', date: '2026-10-10', amount: 200 },
-    { envelopeId: 'l', date: '2026-09-28', amount: 100 },
-    { envelopeId: 'g', date: '2026-11-02', amount: 1000 }, // mois en cours : ignoré
-    { envelopeId: 'x', date: '2026-10-02', amount: 1000 }, // enveloppe supprimée : ignorée
-  ];
-
-  it('moyenne sur les mois complets ayant des dépenses', () => {
-    const h = historyAverages(tx, envs, { now });
-    expect(h.months).toEqual(['2026-10', '2026-09']);
-    expect(h.envelopes.map(e => e.budgetMonthly)).toEqual([400, 100, 50]);
-    expect(h.perMonth[0]).toEqual({ month: '2026-10', needs: 300, wants: 200, savings: 0 });
+  it('seules les dépenses de novembre comptent, le retrait d\'octobre aussi est ignoré', () => {
+    const since = periodStart('weekly', { now, withdrawals, savingsHistory });
+    expect(since).toBe('2026-11-01');
+    expect(spentInPeriod(transactions, 'n', 'weekly', { since })).toBe(20);
+    const r = computeWithdrawal({
+      envelopes: [{ id: 'n', type: 'need', budgetMonthly: 433, categoryId: 'groceries' }],
+      transactions, mode: 'weekly', since, withdrawn: 0,
+      idealNeeds: 0, idealWants: 0, idealSavings: 0,
+    });
+    // 433/mois ≈ 100/semaine − 20 dépensés = 80
+    expect(r.envelopes.needs[0].toWithdraw).toBe(80);
   });
+});
 
-  it('pas d\'historique → null', () => {
-    expect(historyAverages([], envs, { now })).toBeNull();
-    expect(budgetMethodComparison({ salary: 2000, charges: [], envelopes: envs, transactions: [], now })).toBeNull();
+describe('fin de mois prévue avec report', () => {
+  it('le report s\'ajoute au budget restant de l\'enveloppe', () => {
+    const r = monthEndForecast({
+      balance: 1000, charges: [], transactions: [],
+      envelopes: [{ id: 'v', type: 'want', budgetMonthly: 50 }],
+      carryovers: [{ envelopeId: 'v', month: '2026-11', amount: 30 }],
+      now: new Date(2026, 10, 10),
+    });
+    expect(r.envelopesLeft).toBe(80);
+    expect(r.forecast).toBe(920);
   });
+});
 
-  it('score : 0 quand le réel colle à la règle, null sans objectifs', () => {
-    const fit = [
-      { id: 'n', type: 'need', categoryId: 'groceries', budgetMonthly: 1000 },
-      { id: 'w', type: 'want', categoryId: 'restaurant', budgetMonthly: 600 },
-    ];
-    // reste du mois 400 = 20 % → épargne pile à l'objectif
-    expect(ruleFitScore(budgetRuleBreakdown('50-30-20', 2000, [], fit))).toBe(0);
-    expect(ruleFitScore(budgetRuleBreakdown('80-20', 2000, [], fit))).toBe(0);
-    expect(ruleFitScore(budgetRuleBreakdown('six-jars', 2000, [], fit))).toBeGreaterThan(0);
-    expect(ruleFitScore(budgetRuleBreakdown('kakeibo', 2000, [], fit))).toBeNull();
+describe('divers', () => {
+  it('répartition idéale invalide → 50/30/20', () => {
+    expect(idealSplit({ idealNeedsPct: 0, idealWantsPct: 0, idealSavingsPct: 0 })).toEqual({ needs: 0.5, wants: 0.3, savings: 0.2 });
   });
-
-  it('comparaison : toutes les méthodes, meilleure = score le plus bas', () => {
-    const c = budgetMethodComparison({ salary: 2000, charges: [{ categoryId: 'housing', amount: 600 }], envelopes: envs, transactions: tx, now });
-    expect(c.rules).toHaveLength(Object.keys(BUDGET_RULES).length);
-    const scored = c.rules.filter(r => r.score != null);
-    expect(c.best).toBe(scored.reduce((a, b) => (b.score < a.score ? b : a)).id);
-    expect(c.rules.find(r => r.id === 'zero-based').toAssign).toBe(2000 - 600 - 550);
+  it('épargne réelle : uniquement pour un mois clôturé, reste compté s\'il va sur un objectif', () => {
+    expect(realSavings({ actualSavings: 100 })).toBeNull();
+    expect(realSavings({ closedAt: 'x', actualSavings: 100, actualRemainder: 40 })).toBe(100);
+    expect(realSavings({ closedAt: 'x', actualSavings: 100, actualRemainder: 40, remainderToGoalId: 'g' })).toBe(140);
   });
 });

@@ -25,7 +25,9 @@ function appUrl(path = '') {
   return `${(process.env.APP_URL || '').replace(/\/$/, '')}${path}`;
 }
 
-function layout(title, body, cta) {
+const NOTIF_FOOTER = 'Tu reçois cet e-mail car les notifications sont activées dans ton profil MesSous.';
+
+function layout(title, body, cta, footer = NOTIF_FOOTER) {
   const button = cta
     ? `<p style="margin:24px 0"><a href="${cta.href}" style="background:#6366f1;color:#fff;text-decoration:none;padding:12px 20px;border-radius:12px;font-weight:600">${cta.label}</a></p>`
     : '';
@@ -37,7 +39,7 @@ function layout(title, body, cta) {
       ${body}
       ${button}
     </div>
-    <p style="font-size:11px;color:#94a3b8;margin-top:16px">Tu reçois cet e-mail car les notifications sont activées dans ton profil MesSous.</p>
+    <p style="font-size:11px;color:#94a3b8;margin-top:16px">${footer}</p>
   </div></body></html>`;
 }
 
@@ -60,18 +62,33 @@ async function sendMail({ to, subject, html, text }) {
   return true;
 }
 
-// Envoie un e-mail une seule fois par (utilisateur, type, référence)
+// Notifie une seule fois par (utilisateur, type, référence) : e-mail (si SMTP configuré)
+// et notification push (si un appareil est abonné). build(recipient) → { subject, html, push? }
 async function sendOnce(userId, kind, ref, build) {
-  const { rows } = await pool.query(
-    'INSERT INTO email_log (user_id, kind, ref) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING user_id',
-    [userId, kind, ref]
-  );
+  let rows;
+  try {
+    ({ rows } = await pool.query(
+      'INSERT INTO email_log (user_id, kind, ref) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING user_id',
+      [userId, kind, ref]
+    ));
+  } catch (err) {
+    // Compte supprimé entre-temps : on n'interrompt pas l'envoi aux autres utilisateurs
+    console.error('[mail]', kind, err.message);
+    return false;
+  }
   if (!rows.length) return false;
   try {
     const recipient = await recipientFor(userId);
     if (!recipient) return false;
-    const mail = await build(recipient);
-    const sent = await sendMail({ to: recipient.email, ...mail });
+    const { push, ...mail } = await build(recipient);
+    const mailed = await sendMail({ to: recipient.email, ...mail });
+    // Chargé ici pour éviter une dépendance circulaire (push → db, mailer → db)
+    const pushed = await require('./push').sendPush(userId, {
+      title: push?.title || mail.subject,
+      body: push?.body || '',
+      url: push?.url || '/',
+    }).catch(err => { console.error('[push]', err.message); return 0; });
+    const sent = mailed || pushed > 0;
     if (!sent) await pool.query('DELETE FROM email_log WHERE user_id=$1 AND kind=$2 AND ref=$3', [userId, kind, ref]);
     return sent;
   } catch (err) {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useBudget } from '../context/BudgetContext';
 import { api } from '../api/client';
-import { BUDGET_RULES, budgetMethodComparison } from '../utils/budget';
+import { BUDGET_RULES, budgetMethodComparison, idealSplit } from '../utils/budget';
 
 const MONTH_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const monthLabel = k => `${MONTH_FR[Number(k.slice(5, 7)) - 1]} ${k.slice(0, 4)}`;
@@ -23,6 +23,7 @@ export default function AiBudgetAdvice() {
       transactions,
       includeFixed,
       savingsGoal: profile.kakeiboSavingsGoal,
+      split: idealSplit(profile),
     });
     if (!comparison) {
       setStatus({ busy: false, error: 'Pas encore assez d\'historique : il faut au moins un mois complet de dépenses enregistrées.', advice: null });

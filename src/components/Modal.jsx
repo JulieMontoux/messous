@@ -14,7 +14,7 @@ export default function Modal({ title, onClose, children, footer }) {
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+      <div role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined} className="relative bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-slate-100">
           <h3 className="font-semibold text-slate-800">{title}</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
