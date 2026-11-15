@@ -317,16 +317,18 @@ export default function Dashboard({ navigate }) {
           {/* Budget idéal : 50/30/20 ou 55/10/5/15/15 */}
           {netSalary > 0 && (() => {
             const ruleId = settings.budgetRule || '50-30-20';
-            const breakdown = budgetRuleBreakdown(ruleId, netSalary, fixedCharges, envelopes);
+            const breakdown = budgetRuleBreakdown(ruleId, netSalary, fixedCharges, envelopes, {
+              includeFixed: profile.budgetIncludeFixed ?? true,
+            });
             if (!breakdown) return null;
-            const { rule, base, rows } = breakdown;
+            const { base, includeFixed, rows } = breakdown;
             return (
               <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
                 <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold text-slate-700">Budget idéal</p>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Base : {fmt(display(base))} {rule.base === 'salary' ? '(salaire)' : '(après charges fixes)'}
+                      Base : {fmt(display(base))} {includeFixed ? '(salaire, charges fixes comprises)' : '(après charges fixes)'}
                     </p>
                   </div>
                   <div className="flex bg-slate-100 rounded-xl p-1 gap-1">

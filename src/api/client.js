@@ -52,6 +52,7 @@ export const DEFAULT_PROFILE = {
   alertThreshold: 80,
   alertEmail: '',
   monthEndEmail: true,
+  budgetIncludeFixed: true,
   accountEmail: '',
   mailConfigured: false,
 };

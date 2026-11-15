@@ -181,11 +181,9 @@ export function realSavings(snap) {
 }
 
 // Règles de répartition du « Budget idéal ».
-// base 'afterFixed' : salaire − charges fixes (épargne programmée comprise) · base 'salary' : salaire entier
 export const BUDGET_RULES = {
   '50-30-20': {
     label: '50/30/20',
-    base: 'afterFixed',
     rows: [
       { key: 'needs', label: 'Besoins', pct: 0.5, color: '#3b82f6', icon: '🧾', saving: false },
       { key: 'savings', label: 'Épargne', pct: 0.2, color: '#10b981', icon: '🏦', saving: true },
@@ -194,7 +192,6 @@ export const BUDGET_RULES = {
   },
   '55-10-5-15-15': {
     label: '55/10/5/15/15',
-    base: 'salary',
     rows: [
       { key: 'essentials', label: 'Essentiel', pct: 0.55, color: '#3b82f6', icon: '🧾', saving: false },
       { key: 'pleasure', label: 'Plaisir', pct: 0.1, color: '#8b5cf6', icon: '🎉', saving: false },
@@ -224,20 +221,25 @@ function ruleEnvelopes(key, envelopes) {
 }
 
 // Montants réels vs idéaux pour une règle. Retourne null si la base est nulle ou négative.
-// 55/10/5/15/15 : l'essentiel inclut les charges fixes ; l'épargne programmée et le reste du mois
-// comptent en épargne court terme (argent disponible, pas bloqué).
-export function budgetRuleBreakdown(ruleId, salary, charges, envelopes) {
+// includeFixed (profil) : base = salaire entier, les charges fixes comptent dans les besoins / l'essentiel
+// et l'épargne programmée dans l'épargne (court terme pour 55/10/5/15/15).
+// Sinon base = salaire − charges fixes (épargne programmée comprise) et seules les enveloppes comptent.
+// Le reste du mois compte toujours en épargne (court terme : argent disponible, pas bloqué).
+export function budgetRuleBreakdown(ruleId, salary, charges, envelopes, { includeFixed = true } = {}) {
   const rule = BUDGET_RULES[ruleId] || BUDGET_RULES['50-30-20'];
   const fixed = totalFixedExSavings(charges);
   const programmed = totalProgrammedSavings(charges);
   const remainder = Math.max(0, computedSavings(salary, charges, envelopes));
-  const base = rule.base === 'salary' ? (Number(salary) || 0) : (Number(salary) || 0) - fixed - programmed;
+  const base = includeFixed ? (Number(salary) || 0) : (Number(salary) || 0) - fixed - programmed;
   if (base <= 0) return null;
 
+  const fixedPart = includeFixed ? fixed : 0;
+  const programmedPart = includeFixed ? programmed : 0;
   const extra = {
-    savings: remainder,
-    essentials: fixed,
-    shortTerm: programmed + remainder,
+    needs: fixedPart,
+    essentials: fixedPart,
+    savings: programmedPart + remainder,
+    shortTerm: programmedPart + remainder,
   };
   const rows = rule.rows.map(row => {
     const envs = ruleEnvelopes(row.key, envelopes);
@@ -252,5 +254,5 @@ export function budgetRuleBreakdown(ruleId, salary, charges, envelopes) {
       topEnvelopes: [...envs].sort((a, b) => b.budgetMonthly - a.budgetMonthly).slice(0, 2),
     };
   });
-  return { rule, base, rows };
+  return { rule, base, includeFixed, rows };
 }

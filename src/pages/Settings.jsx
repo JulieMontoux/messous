@@ -264,6 +264,14 @@ export default function Settings() {
           value={profile.isSmoker}
           onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { isSmoker: v } })}
         />
+        <Toggle
+          label="🧮 Budget idéal avec les charges fixes"
+          sub={profile.budgetIncludeFixed ?? true
+            ? 'Calcul sur le salaire entier, charges fixes comptées dans les besoins'
+            : 'Calcul sur le salaire moins les charges fixes'}
+          value={profile.budgetIncludeFixed ?? true}
+          onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { budgetIncludeFixed: v } })}
+        />
       </div>
       </div>
 

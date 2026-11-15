@@ -16,8 +16,17 @@ const envelopes = [
 const byKey = res => Object.fromEntries(res.rows.map(r => [r.key, r]));
 
 describe('budgetRuleBreakdown', () => {
-  it('50/30/20 : base = salaire − charges fixes', () => {
+  it('avec charges fixes (défaut) : base = salaire, charges dans les besoins', () => {
     const res = budgetRuleBreakdown('50-30-20', 2000, charges, envelopes);
+    expect(res.base).toBe(2000);
+    const r = byKey(res);
+    expect(r.needs).toMatchObject({ actual: 700 + 300, ideal: 1000 });
+    expect(r.wants).toMatchObject({ actual: 230, ideal: 600 });
+    expect(r.savings).toMatchObject({ actual: 350 + 100 + 320, ideal: 400 });
+  });
+
+  it('sans charges fixes : base = salaire − charges fixes, seules les enveloppes comptent', () => {
+    const res = budgetRuleBreakdown('50-30-20', 2000, charges, envelopes, { includeFixed: false });
     expect(res.base).toBe(1200);
     const r = byKey(res);
     expect(r.needs).toMatchObject({ actual: 300, ideal: 600 });
@@ -25,7 +34,7 @@ describe('budgetRuleBreakdown', () => {
     expect(r.savings).toMatchObject({ actual: 350 + 320, ideal: 240 });
   });
 
-  it('55/10/5/15/15 : base = salaire entier, voyages et long terme séparés', () => {
+  it('55/10/5/15/15 : voyages et long terme séparés', () => {
     const res = budgetRuleBreakdown('55-10-5-15-15', 2000, charges, envelopes);
     expect(res.base).toBe(2000);
     const r = byKey(res);
@@ -37,8 +46,15 @@ describe('budgetRuleBreakdown', () => {
     expect(res.rows.reduce((s, x) => s + x.pct, 0)).toBeCloseTo(1);
   });
 
+  it('55/10/5/15/15 sans charges fixes', () => {
+    const r = byKey(budgetRuleBreakdown('55-10-5-15-15', 2000, charges, envelopes, { includeFixed: false }));
+    expect(r.essentials).toMatchObject({ actual: 300, ideal: 660 });
+    expect(r.shortTerm).toMatchObject({ actual: 200 + 320, ideal: 180 });
+  });
+
   it('règle inconnue → 50/30/20, base nulle → null', () => {
     expect(budgetRuleBreakdown('nope', 2000, charges, envelopes).rule.label).toBe('50/30/20');
     expect(budgetRuleBreakdown('55-10-5-15-15', 0, charges, envelopes)).toBeNull();
+    expect(budgetRuleBreakdown('50-30-20', 800, charges, envelopes, { includeFixed: false })).toBeNull();
   });
 });
