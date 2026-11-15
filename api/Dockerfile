@@ -4,12 +4,14 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
 # Dépendances de production, puis on retire les outils inutiles à l'exécution (npm, npx,
-# corepack, yarn embarquent leurs propres dépendances et donc leurs propres CVE) et on
-# applique les correctifs de sécurité Alpine (OpenSSL…)
+# corepack, yarn embarquent leurs propres dépendances et donc leurs propres CVE)
 RUN npm ci --omit=dev && npm cache clean --force \
   && rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \
-            /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn* /root/.npm \
-  && apk upgrade --no-cache
+            /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn* /root/.npm
+# Correctifs de sécurité Alpine (OpenSSL…). SECURITY_REFRESH change à chaque build de CI (et chaque
+# jour au déploiement) : sans lui, Docker réutilise la couche en cache et garde des paquets vulnérables.
+ARG SECURITY_REFRESH=
+RUN echo "Correctifs Alpine : ${SECURITY_REFRESH:-sans date}" && apk upgrade --no-cache
 COPY src ./src
 # Lisible par l'utilisateur node quels que soient les droits des fichiers sur le serveur
 # (ex. fichier en 600 copié par scp), sans lui donner le droit d'écrire
