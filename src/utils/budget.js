@@ -179,3 +179,78 @@ export function realSavings(snap) {
   if (!snap?.closedAt) return null;
   return (snap.actualSavings || 0) + (snap.remainderToGoalId ? (snap.actualRemainder || 0) : 0);
 }
+
+// Règles de répartition du « Budget idéal ».
+// base 'afterFixed' : salaire − charges fixes (épargne programmée comprise) · base 'salary' : salaire entier
+export const BUDGET_RULES = {
+  '50-30-20': {
+    label: '50/30/20',
+    base: 'afterFixed',
+    rows: [
+      { key: 'needs', label: 'Besoins', pct: 0.5, color: '#3b82f6', icon: '🧾', saving: false },
+      { key: 'savings', label: 'Épargne', pct: 0.2, color: '#10b981', icon: '🏦', saving: true },
+      { key: 'wants', label: 'Plaisirs', pct: 0.3, color: '#8b5cf6', icon: '🎉', saving: false },
+    ],
+  },
+  '55-10-5-15-15': {
+    label: '55/10/5/15/15',
+    base: 'salary',
+    rows: [
+      { key: 'essentials', label: 'Essentiel', pct: 0.55, color: '#3b82f6', icon: '🧾', saving: false },
+      { key: 'pleasure', label: 'Plaisir', pct: 0.1, color: '#8b5cf6', icon: '🎉', saving: false },
+      { key: 'travel', label: 'Voyages', pct: 0.05, color: '#f59e0b', icon: '✈️', saving: false },
+      { key: 'shortTerm', label: 'Épargne court terme', pct: 0.15, color: '#10b981', icon: '🏦', saving: true },
+      { key: 'longTerm', label: 'Épargne long terme', pct: 0.15, color: '#059669', icon: '📈', saving: true },
+    ],
+  },
+};
+
+const TRAVEL_CATEGORIES = new Set(['vacation']);
+const LONG_TERM_CATEGORIES = new Set(['assurance_vie']);
+
+// Enveloppes rattachées à chaque ligne de la règle (servent au total et aux suggestions)
+function ruleEnvelopes(key, envelopes) {
+  switch (key) {
+    case 'needs':
+    case 'essentials': return envelopes.filter(e => e.type === 'need');
+    case 'wants': return envelopes.filter(e => e.type === 'want');
+    case 'pleasure': return envelopes.filter(e => e.type === 'want' && !TRAVEL_CATEGORIES.has(e.categoryId));
+    case 'travel': return envelopes.filter(e => TRAVEL_CATEGORIES.has(e.categoryId));
+    case 'savings': return envelopes.filter(e => e.type === 'saving');
+    case 'shortTerm': return envelopes.filter(e => e.type === 'saving' && !LONG_TERM_CATEGORIES.has(e.categoryId));
+    case 'longTerm': return envelopes.filter(e => e.type === 'saving' && LONG_TERM_CATEGORIES.has(e.categoryId));
+    default: return [];
+  }
+}
+
+// Montants réels vs idéaux pour une règle. Retourne null si la base est nulle ou négative.
+// 55/10/5/15/15 : l'essentiel inclut les charges fixes ; l'épargne programmée et le reste du mois
+// comptent en épargne court terme (argent disponible, pas bloqué).
+export function budgetRuleBreakdown(ruleId, salary, charges, envelopes) {
+  const rule = BUDGET_RULES[ruleId] || BUDGET_RULES['50-30-20'];
+  const fixed = totalFixedExSavings(charges);
+  const programmed = totalProgrammedSavings(charges);
+  const remainder = Math.max(0, computedSavings(salary, charges, envelopes));
+  const base = rule.base === 'salary' ? (Number(salary) || 0) : (Number(salary) || 0) - fixed - programmed;
+  if (base <= 0) return null;
+
+  const extra = {
+    savings: remainder,
+    essentials: fixed,
+    shortTerm: programmed + remainder,
+  };
+  const rows = rule.rows.map(row => {
+    const envs = ruleEnvelopes(row.key, envelopes);
+    const actual = totalVariableEnvelopes(envs) + (extra[row.key] || 0);
+    const ideal = base * row.pct;
+    return {
+      ...row,
+      tip: `${Math.round(row.pct * 100)}%`,
+      actual,
+      ideal,
+      diff: actual - ideal,
+      topEnvelopes: [...envs].sort((a, b) => b.budgetMonthly - a.budgetMonthly).slice(0, 2),
+    };
+  });
+  return { rule, base, rows };
+}

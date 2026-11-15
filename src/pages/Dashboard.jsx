@@ -4,7 +4,7 @@ import {
   fmt, totalFixedExSavings, totalProgrammedSavings,
   totalExpenseEnvelopes, totalSavingEnvelopesBudget,
   computedSavings, totalSavings, budgetHealth, HEALTH_CONFIG, donutData, weeklyAmount,
-  realSpending, envelopeForecast, periodDaysFor,
+  realSpending, envelopeForecast, periodDaysFor, BUDGET_RULES, budgetRuleBreakdown,
 } from '../utils/budget';
 import { periodStart, monthKey, previousMonthKey, isLastDayOfMonth, daysInMonth } from '../utils/period';
 import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard } from 'lucide-react';
@@ -314,37 +314,42 @@ export default function Dashboard({ navigate }) {
             </div>
           )}
 
-          {/* Budget idéal 50/20/30 */}
+          {/* Budget idéal : 50/30/20 ou 55/10/5/15/15 */}
           {netSalary > 0 && (() => {
-            const afterFixed = netSalary - fixed - programmedSav;
-            if (afterFixed <= 0) return null;
-            const actualNeeds = envelopes.filter(e => e.type === 'need').reduce((s, e) => s + (Number(e.budgetMonthly) || 0), 0);
-            const actualWants = envelopes.filter(e => e.type === 'want').reduce((s, e) => s + (Number(e.budgetMonthly) || 0), 0);
-            const actualSavAlloc = savingEnv + Math.max(0, remainder);
-            const rows = [
-              { label: 'Besoins', pct: 0.5, actual: actualNeeds, color: '#3b82f6', type: 'need', icon: '🧾', tip: '50%' },
-              { label: 'Épargne', pct: 0.2, actual: actualSavAlloc, color: '#10b981', type: 'saving', icon: '🏦', tip: '20%' },
-              { label: 'Plaisirs', pct: 0.3, actual: actualWants, color: '#8b5cf6', type: 'want', icon: '🎉', tip: '30%' },
-            ];
+            const ruleId = settings.budgetRule || '50-30-20';
+            const breakdown = budgetRuleBreakdown(ruleId, netSalary, fixedCharges, envelopes);
+            if (!breakdown) return null;
+            const { rule, base, rows } = breakdown;
             return (
               <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
-                <div className="mb-4">
-                  <p className="text-sm font-semibold text-slate-700">Budget idéal</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Base : {fmt(display(afterFixed))}</p>
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700">Budget idéal</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Base : {fmt(display(base))} {rule.base === 'salary' ? '(salaire)' : '(après charges fixes)'}
+                    </p>
+                  </div>
+                  <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+                    {Object.entries(BUDGET_RULES).map(([id, r]) => (
+                      <button
+                        key={id}
+                        onClick={() => dispatch({ type: 'SET_BUDGET_RULE', payload: id })}
+                        className={cn(
+                          'py-1 px-2 rounded-lg text-[11px] font-semibold transition-colors',
+                          ruleId === id ? 'bg-white text-primary shadow-sm' : 'text-slate-500'
+                        )}
+                      >
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="space-y-4">
-                  {rows.map(({ label, pct, actual, color, type, icon, tip }) => {
-                    const ideal = afterFixed * pct;
-                    const diff = actual - ideal;
+                  {rows.map(({ key, label, actual, ideal, diff, color, saving: isSaving, icon, tip, topEnvelopes }) => {
                     const over = diff > 0;
-                    const isSaving = type === 'saving';
                     const barPct = Math.min(100, ideal > 0 ? (actual / ideal) * 100 : 0);
-                    const topEnv = envelopes
-                      .filter(e => e.type === type && type !== 'saving')
-                      .sort((a, b) => b.budgetMonthly - a.budgetMonthly)
-                      .slice(0, 2);
                     return (
-                      <div key={label}>
+                      <div key={key}>
                         <div className="flex items-center justify-between text-xs mb-1.5">
                           <span className="font-semibold text-slate-700">{icon} {label}</span>
                           <span className="text-slate-400 font-medium">{tip}</span>
@@ -367,9 +372,9 @@ export default function Dashboard({ navigate }) {
                             style={{ width: `${barPct}%`, background: over && !isSaving ? '#f59e0b' : color }}
                           />
                         </div>
-                        {over && !isSaving && topEnv.length > 0 && (
+                        {over && !isSaving && topEnvelopes.length > 0 && (
                           <p className="text-[10px] text-warn mt-1">
-                            ↳ {topEnv.map(e => `${e.name} (${fmt(e.budgetMonthly)})`).join(', ')}
+                            ↳ {topEnvelopes.map(e => `${e.name} (${fmt(e.budgetMonthly)})`).join(', ')}
                           </p>
                         )}
                         {!over && isSaving && (

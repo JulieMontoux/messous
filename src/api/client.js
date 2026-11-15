@@ -79,7 +79,10 @@ export async function fetchAll() {
       ...Object.fromEntries(Object.entries(profile).filter(([, v]) => v !== null && v !== undefined)),
       netSalary: Number(profile.netSalary) || 0,
     },
-    settings: { viewMode: settings.view_mode || settings.viewMode || 'monthly' },
+    settings: {
+      viewMode: settings.view_mode || settings.viewMode || 'monthly',
+      budgetRule: settings.budget_rule || settings.budgetRule || '50-30-20',
+    },
     fixedCharges,
     envelopes,
     transactions,

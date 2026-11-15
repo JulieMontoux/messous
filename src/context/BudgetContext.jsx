@@ -9,7 +9,7 @@ const defaultState = {
   savingsHistory: [],
   withdrawals: [],
   bankTransactions: [],
-  settings: { viewMode: 'monthly' },
+  settings: { viewMode: 'monthly', budgetRule: '50-30-20' },
 };
 
 function reducer(state, action) {
@@ -88,6 +88,9 @@ function reducer(state, action) {
     case 'SET_VIEW_MODE':
       return { ...state, settings: { ...state.settings, viewMode: action.payload } };
 
+    case 'SET_BUDGET_RULE':
+      return { ...state, settings: { ...state.settings, budgetRule: action.payload } };
+
     case 'RESET':
       return defaultState;
 
@@ -153,6 +156,9 @@ async function syncToApi(action) {
 
     case 'SET_VIEW_MODE':
       return api.put('/api/settings', { viewMode: action.payload });
+
+    case 'SET_BUDGET_RULE':
+      return api.put('/api/settings', { budgetRule: action.payload });
 
     default:
       break;
