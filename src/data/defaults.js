@@ -15,10 +15,15 @@ export const ENVELOPE_CATEGORIES = [
   { id: 'car_maintenance', name: 'Entretien voiture', icon: '🔧', colorKey: 'needs', type: 'need' },
   { id: 'gifts', name: 'Cadeaux', icon: '🎁', colorKey: 'wants', type: 'want' },
   { id: 'vacation', name: 'Vacances', icon: '✈️', colorKey: 'wants', type: 'want' },
+  { id: 'education', name: 'Formation / Livres', icon: '📚', colorKey: 'wants', type: 'want' },
+  { id: 'culture', name: 'Culture (ciné, expos, musique)', icon: '🎭', colorKey: 'wants', type: 'want' },
+  { id: 'donations', name: 'Dons / Associations', icon: '💝', colorKey: 'wants', type: 'want' },
+  { id: 'unexpected', name: 'Imprévus', icon: '🌀', colorKey: 'needs', type: 'need' },
   { id: 'other', name: 'Divers', icon: '📦', colorKey: 'fixed', type: 'need' },
   { id: 'livret', name: 'Livret A / LEP', icon: '🏦', colorKey: 'saving', type: 'saving' },
   { id: 'saving_project', name: 'Projet épargne', icon: '🎯', colorKey: 'saving', type: 'saving' },
   { id: 'assurance_vie', name: 'Assurance-vie / PEA', icon: '📈', colorKey: 'saving', type: 'saving' },
+  { id: 'retirement', name: 'Retraite (PER)', icon: '🧓', colorKey: 'saving', type: 'saving' },
   { id: 'emergency', name: 'Fonds d\'urgence', icon: '🛡️', colorKey: 'saving', type: 'saving' },
 ];
 

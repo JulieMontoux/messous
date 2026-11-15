@@ -53,6 +53,7 @@ export const DEFAULT_PROFILE = {
   alertEmail: '',
   monthEndEmail: true,
   budgetIncludeFixed: true,
+  kakeiboSavingsGoal: 0,
   accountEmail: '',
   mailConfigured: false,
 };

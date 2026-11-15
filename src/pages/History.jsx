@@ -7,12 +7,13 @@ import { api } from '../api/client';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
 
-function CloseMonthModal({ snap, onSave, onClose }) {
+function CloseMonthModal({ snap, kakeibo, onSave, onClose }) {
   const planned = (snap.programmedSavings || 0) + (snap.savingEnvelopes || 0);
   const [form, setForm] = useState({
     actualSavings: snap.actualSavings ?? planned,
     actualRemainder: snap.actualRemainder ?? Math.max(0, snap.remainder || 0),
     remainderToGoalId: snap.remainderToGoalId || '',
+    review: snap.review || '',
   });
   const [goals, setGoals] = useState([]);
 
@@ -34,6 +35,7 @@ function CloseMonthModal({ snap, onSave, onClose }) {
               actualSavings: Number(form.actualSavings) || 0,
               actualRemainder: Number(form.actualRemainder) || 0,
               remainderToGoalId: form.remainderToGoalId || null,
+              review: form.review.trim(),
             })}
           >Enregistrer</button>
         </>
@@ -63,6 +65,16 @@ function CloseMonthModal({ snap, onSave, onClose }) {
           </select>
         </div>
       )}
+      <div>
+        <label className="label">{kakeibo ? '📓 Bilan Kakeibo' : '📓 Bilan du mois (facultatif)'}</label>
+        <textarea
+          className="input min-h-[80px]"
+          maxLength={2000}
+          placeholder="Qu'est-ce qui a bien marché ? Où as-tu trop dépensé ? Comment faire mieux le mois prochain ?"
+          value={form.review}
+          onChange={e => setForm(f => ({ ...f, review: e.target.value }))}
+        />
+      </div>
       <div className="bg-savings/5 rounded-xl p-3 flex justify-between items-center">
         <span className="text-sm text-slate-600">Épargne réelle du mois</span>
         <span className="text-xl font-bold text-savings">{fmt(total)}</span>
@@ -286,6 +298,9 @@ export default function History({ params = {} }) {
                           {snap.remainderToGoalId ? ' → objectif' : ''}</span>
                       </div>
                     )}
+                    {snap.closedAt && snap.review && (
+                      <p className="mt-1.5 text-xs text-slate-500 italic whitespace-pre-line border-l-2 border-slate-200 pl-2">📓 {snap.review}</p>
+                    )}
                     {!snap.closedAt && snap.month <= cm && (
                       <button onClick={() => setClosing(snap.month)} className="mt-1.5 text-xs font-medium text-primary hover:text-primary-dark">
                         Enregistrer l'épargne réelle et le reste →
@@ -318,6 +333,7 @@ export default function History({ params = {} }) {
       {closingSnap && (
         <CloseMonthModal
           snap={closingSnap}
+          kakeibo={state.settings.budgetRule === 'kakeibo'}
           onClose={() => setClosing(null)}
           onSave={payload => { dispatch({ type: 'CLOSE_MONTH', payload }); setClosing(null); }}
         />

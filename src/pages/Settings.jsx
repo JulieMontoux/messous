@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { REGIONS, ENVELOPE_CATEGORIES, generateId, getTobaccoType, tobaccoMonthlyBudget } from '../data/defaults';
 import { SUPERMARKETS, getSupermarket } from '../data/supermarkets';
 import { api } from '../api/client';
-import { fmt, recommendBudgetRule } from '../utils/budget';
+import { fmt, recommendBudgetRule, budgetRuleBase, DEFAULT_KAKEIBO_GOAL_PCT } from '../utils/budget';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
 import TobaccoFields from '../components/TobaccoFields';
@@ -276,6 +276,9 @@ export default function Settings() {
           onChangeRule={id => dispatch({ type: 'SET_BUDGET_RULE', payload: id })}
           onChangeIncludeFixed={v => dispatch({ type: 'UPDATE_PROFILE', payload: { budgetIncludeFixed: v } })}
           recommended={recommendBudgetRule(profile.netSalary, state.fixedCharges, envelopes)}
+          savingsGoal={profile.kakeiboSavingsGoal}
+          onChangeSavingsGoal={v => dispatch({ type: 'UPDATE_PROFILE', payload: { kakeiboSavingsGoal: v } })}
+          defaultGoal={budgetRuleBase(profile.netSalary, state.fixedCharges, profile.budgetIncludeFixed ?? true) * DEFAULT_KAKEIBO_GOAL_PCT}
         />
       </div>
       </div>

@@ -26,6 +26,7 @@ function toClient(r) {
     alertEmail: r.alert_email || '',
     monthEndEmail: r.month_end_email ?? true,
     budgetIncludeFixed: r.budget_include_fixed ?? true,
+    kakeiboSavingsGoal: r.kakeibo_savings_goal != null ? Number(r.kakeibo_savings_goal) : 0,
   };
 }
 
@@ -50,6 +51,7 @@ const FIELDS = {
   alertEmail: ['alert_email', v => (v ? String(v).trim() : null)],
   monthEndEmail: 'month_end_email',
   budgetIncludeFixed: 'budget_include_fixed',
+  kakeiboSavingsGoal: ['kakeibo_savings_goal', v => Number(v) || null],
 };
 
 router.get('/', async (req, res) => {

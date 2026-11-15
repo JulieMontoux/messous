@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { budgetRuleBreakdown, recommendBudgetRule } from './budget';
+import { budgetRuleBreakdown, recommendBudgetRule, BUDGET_RULES } from './budget';
 
 const charges = [
   { categoryId: 'housing', amount: 700 },
@@ -85,5 +85,86 @@ describe('recommendBudgetRule', () => {
 
   it('salaire nul → valeurs par défaut', () => {
     expect(recommendBudgetRule(0, [], [])).toEqual({ ruleId: '50-30-20', includeFixed: true, reasons: [] });
+  });
+});
+
+describe('budgetRuleBreakdown : autres méthodes', () => {
+  const ch = [
+    { categoryId: 'housing', amount: 600 },
+    { categoryId: 'loan', amount: 200 },
+    { categoryId: 'savings', amount: 100 },
+  ];
+  const envs = [
+    { id: 'g', type: 'need', categoryId: 'groceries', budgetMonthly: 300 },
+    { id: 'i', type: 'need', categoryId: 'unexpected', budgetMonthly: 50 },
+    { id: 'r', type: 'want', categoryId: 'restaurant', budgetMonthly: 150 },
+    { id: 'e', type: 'want', categoryId: 'education', budgetMonthly: 40 },
+    { id: 'd', type: 'want', categoryId: 'donations', budgetMonthly: 30 },
+    { id: 'l', type: 'saving', categoryId: 'livret', budgetMonthly: 100 },
+    { id: 'a', type: 'saving', categoryId: 'assurance_vie', budgetMonthly: 80 },
+    { id: 'p', type: 'saving', categoryId: 'retirement', budgetMonthly: 50 },
+  ];
+  // salaire 2500 → charges 900, enveloppes 800, reste du mois 800
+  const run = (id, opts) => byKey(budgetRuleBreakdown(id, 2500, ch, envs, opts));
+
+  it('toutes les règles en pourcentages font 100 %', () => {
+    for (const [id, rule] of Object.entries(BUDGET_RULES)) {
+      if (rule.zeroBased || rule.kakeibo) continue;
+      expect(rule.rows.reduce((s, r) => s + r.pct, 0), id).toBeCloseTo(1);
+    }
+  });
+
+  it('80/20', () => {
+    const r = run('80-20');
+    expect(r.savings).toMatchObject({ actual: 230 + 100 + 800, ideal: 500 });
+    expect(r.spending).toMatchObject({ actual: 800 + 570, ideal: 2000 });
+  });
+
+  it('70/20/10 : crédits et dons dans la ligne dettes', () => {
+    const r = run('70-20-10');
+    expect(r.living).toMatchObject({ actual: 600 + 540, ideal: 1750 });
+    expect(r.debts).toMatchObject({ actual: 200 + 30, ideal: 250 });
+    expect(run('70-20-10', { includeFixed: false }).debts.actual).toBe(30);
+  });
+
+  it('solution des 60 %', () => {
+    const r = run('sixty');
+    expect(r.committed).toMatchObject({ actual: 800 + 350, ideal: 1500 });
+    expect(r.retirement.actual).toBe(50);
+    expect(r.longTerm.actual).toBe(80);
+    expect(r.shortTerm.actual).toBe(100 + 100 + 800);
+    expect(r.fun.actual).toBe(220);
+  });
+
+  it('6 jarres', () => {
+    const r = run('six-jars');
+    expect(r.freedom.actual).toBe(130);
+    expect(r.education.actual).toBe(40);
+    expect(r.play.actual).toBe(150);
+    expect(r.give).toMatchObject({ actual: 30, ideal: 125 });
+  });
+
+  it('base zéro : reste à affecter, pas d\'objectif', () => {
+    const res = budgetRuleBreakdown('zero-based', 2500, ch, envs);
+    expect(res.toAssign).toBe(800);
+    const r = byKey(res);
+    expect(r.fixed.actual).toBe(800);
+    expect(r.savings).toMatchObject({ actual: 230 + 100, ideal: null, diff: null });
+    expect(byKey(budgetRuleBreakdown('zero-based', 2500, ch, envs, { includeFixed: false })).fixed).toBeUndefined();
+  });
+
+  it('Kakeibo : 4 catégories + objectif d\'épargne', () => {
+    const r = run('kakeibo');
+    expect(r.survival.actual).toBe(800 + 300);
+    expect(r.unexpected.actual).toBe(50);
+    expect(r.culture.actual).toBe(40);
+    expect(r.leisure.actual).toBe(180);
+    expect(r.savings.ideal).toBe(250);
+    expect(run('kakeibo', { savingsGoal: 400 }).savings.ideal).toBe(400);
+  });
+
+  it('crédits ≥ 10 % → 70/20/10 conseillée', () => {
+    expect(recommendBudgetRule(1900, ch, envs).ruleId).toBe('70-20-10'); // crédits 200 / 1900 ≈ 11 %
+    expect(recommendBudgetRule(2500, ch, envs).ruleId).not.toBe('70-20-10'); // 8 %
   });
 });

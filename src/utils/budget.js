@@ -180,85 +180,162 @@ export function realSavings(snap) {
   return (snap.actualSavings || 0) + (snap.remainderToGoalId ? (snap.actualRemainder || 0) : 0);
 }
 
-// Règles de répartition du « Budget idéal ».
+// Règles du « Budget idéal ».
+// Chaque ligne : match (enveloppes rattachées) + extra (charges fixes, épargne programmée, reste du mois…).
+// pct null : pas d'objectif chiffré, on affiche seulement la part (base zéro, Kakeibo).
+// Ces montants « extra » valent 0 quand le calcul se fait sans les charges fixes (voir budgetRuleBreakdown).
+const cat = (...ids) => e => ids.includes(e.categoryId);
+const isType = t => e => e.type === t;
+const not = f => e => !f(e);
+const and = (...fs) => e => fs.every(f => f(e));
+const noEnv = () => false;
+
+const INVEST = cat('assurance_vie', 'retirement');
+const SELF = cat('education', 'culture');
+const UNEXPECTED = cat('unexpected', 'other');
+const saved = x => x.programmed + x.remainder;
+
 export const BUDGET_RULES = {
   '50-30-20': {
     label: '50/30/20',
+    description: '50 % besoins · 30 % envies · 20 % épargne',
     rows: [
-      { key: 'needs', label: 'Besoins', pct: 0.5, color: '#3b82f6', icon: '🧾', saving: false },
-      { key: 'savings', label: 'Épargne', pct: 0.2, color: '#10b981', icon: '🏦', saving: true },
-      { key: 'wants', label: 'Plaisirs', pct: 0.3, color: '#8b5cf6', icon: '🎉', saving: false },
+      { key: 'needs', label: 'Besoins', pct: 0.5, color: '#3b82f6', icon: '🧾', match: isType('need'), extra: x => x.fixed },
+      { key: 'savings', label: 'Épargne', pct: 0.2, color: '#10b981', icon: '🏦', saving: true, match: isType('saving'), extra: saved },
+      { key: 'wants', label: 'Plaisirs', pct: 0.3, color: '#8b5cf6', icon: '🎉', match: isType('want') },
     ],
   },
   '55-10-5-15-15': {
     label: '55/10/5/15/15',
+    description: '55 % essentiel · 10 % plaisir · 5 % voyages · 15 % épargne court terme · 15 % long terme',
     rows: [
-      { key: 'essentials', label: 'Essentiel', pct: 0.55, color: '#3b82f6', icon: '🧾', saving: false },
-      { key: 'pleasure', label: 'Plaisir', pct: 0.1, color: '#8b5cf6', icon: '🎉', saving: false },
-      { key: 'travel', label: 'Voyages', pct: 0.05, color: '#f59e0b', icon: '✈️', saving: false },
-      { key: 'shortTerm', label: 'Épargne court terme', pct: 0.15, color: '#10b981', icon: '🏦', saving: true },
-      { key: 'longTerm', label: 'Épargne long terme', pct: 0.15, color: '#059669', icon: '📈', saving: true },
+      { key: 'essentials', label: 'Essentiel', pct: 0.55, color: '#3b82f6', icon: '🧾', match: isType('need'), extra: x => x.fixed },
+      { key: 'pleasure', label: 'Plaisir', pct: 0.1, color: '#8b5cf6', icon: '🎉', match: and(isType('want'), not(cat('vacation'))) },
+      { key: 'travel', label: 'Voyages', pct: 0.05, color: '#f59e0b', icon: '✈️', match: cat('vacation') },
+      { key: 'shortTerm', label: 'Épargne court terme', pct: 0.15, color: '#10b981', icon: '🏦', saving: true, match: and(isType('saving'), not(INVEST)), extra: saved },
+      { key: 'longTerm', label: 'Épargne long terme', pct: 0.15, color: '#059669', icon: '📈', saving: true, match: INVEST },
+    ],
+  },
+  '80-20': {
+    label: '80/20',
+    description: "20 % d'épargne en premier · 80 % libres pour tout le reste",
+    rows: [
+      { key: 'savings', label: 'Épargne (en premier)', pct: 0.2, color: '#10b981', icon: '🏦', saving: true, match: isType('saving'), extra: saved },
+      { key: 'spending', label: 'Tout le reste', pct: 0.8, color: '#3b82f6', icon: '💳', match: not(isType('saving')), extra: x => x.fixed },
+    ],
+  },
+  '70-20-10': {
+    label: '70/20/10',
+    description: '70 % pour vivre · 20 % épargne · 10 % dettes ou dons',
+    rows: [
+      { key: 'living', label: 'Vivre', pct: 0.7, color: '#3b82f6', icon: '🏠', match: and(not(isType('saving')), not(cat('donations'))), extra: x => x.fixed - x.loans },
+      { key: 'savings', label: 'Épargne', pct: 0.2, color: '#10b981', icon: '🏦', saving: true, match: isType('saving'), extra: saved },
+      { key: 'debts', label: 'Dettes & dons', pct: 0.1, color: '#f59e0b', icon: '🤝', match: cat('donations'), extra: x => x.loans },
+    ],
+  },
+  'sixty': {
+    label: 'Solution 60 %',
+    description: '60 % dépenses engagées · 10 % retraite · 10 % long terme · 10 % court terme · 10 % plaisir',
+    rows: [
+      { key: 'committed', label: 'Dépenses engagées', pct: 0.6, color: '#3b82f6', icon: '🧾', match: isType('need'), extra: x => x.fixed },
+      { key: 'retirement', label: 'Retraite', pct: 0.1, color: '#047857', icon: '🧓', saving: true, match: cat('retirement') },
+      { key: 'longTerm', label: 'Épargne long terme', pct: 0.1, color: '#059669', icon: '📈', saving: true, match: cat('assurance_vie') },
+      { key: 'shortTerm', label: 'Épargne court terme', pct: 0.1, color: '#10b981', icon: '🏦', saving: true, match: and(isType('saving'), not(INVEST)), extra: saved },
+      { key: 'fun', label: 'Plaisir', pct: 0.1, color: '#8b5cf6', icon: '🎉', match: isType('want') },
+    ],
+  },
+  'six-jars': {
+    label: '6 jarres',
+    description: '55 % besoins · 10 % liberté financière · 10 % épargne · 10 % formation · 10 % plaisirs · 5 % dons',
+    rows: [
+      { key: 'needs', label: 'Besoins', pct: 0.55, color: '#3b82f6', icon: '🧾', match: isType('need'), extra: x => x.fixed },
+      { key: 'freedom', label: 'Liberté financière', pct: 0.1, color: '#047857', icon: '📈', saving: true, match: INVEST },
+      { key: 'longTerm', label: 'Épargne long terme', pct: 0.1, color: '#10b981', icon: '🏦', saving: true, match: and(isType('saving'), not(INVEST)), extra: saved },
+      { key: 'education', label: 'Formation', pct: 0.1, color: '#0ea5e9', icon: '📚', match: cat('education') },
+      { key: 'play', label: 'Plaisirs', pct: 0.1, color: '#8b5cf6', icon: '🎉', match: and(isType('want'), not(cat('education', 'donations'))) },
+      { key: 'give', label: 'Dons', pct: 0.05, color: '#f43f5e', icon: '💝', match: cat('donations') },
+    ],
+  },
+  'zero-based': {
+    label: 'Base zéro',
+    description: 'Chaque euro reçoit une affectation : il doit rester 0 € à affecter',
+    zeroBased: true,
+    rows: [
+      { key: 'fixed', label: 'Charges fixes', pct: null, color: '#64748b', icon: '📌', match: noEnv, extra: x => x.fixed, onlyWithFixed: true },
+      { key: 'needs', label: 'Besoins', pct: null, color: '#3b82f6', icon: '🧾', match: isType('need') },
+      { key: 'wants', label: 'Envies', pct: null, color: '#8b5cf6', icon: '🎉', match: isType('want') },
+      { key: 'savings', label: 'Épargne', pct: null, color: '#10b981', icon: '🏦', saving: true, match: isType('saving'), extra: x => x.programmed },
+    ],
+  },
+  'kakeibo': {
+    label: 'Kakeibo',
+    description: "4 catégories (survie, loisirs, culture, imprévus) · un objectif d'épargne · un bilan chaque mois",
+    kakeibo: true,
+    rows: [
+      { key: 'survival', label: 'Survie', pct: null, color: '#3b82f6', icon: '🍚', match: and(isType('need'), not(UNEXPECTED)), extra: x => x.fixed },
+      { key: 'leisure', label: 'Loisirs', pct: null, color: '#8b5cf6', icon: '🎉', match: and(isType('want'), not(SELF)) },
+      { key: 'culture', label: 'Culture', pct: null, color: '#0ea5e9', icon: '📚', match: SELF },
+      { key: 'unexpected', label: 'Imprévus', pct: null, color: '#f59e0b', icon: '🌀', match: UNEXPECTED },
+      { key: 'savings', label: "Objectif d'épargne", pct: null, color: '#10b981', icon: '🏦', saving: true, goal: true, match: isType('saving'), extra: saved },
     ],
   },
 };
 
-const TRAVEL_CATEGORIES = new Set(['vacation']);
-const LONG_TERM_CATEGORIES = new Set(['assurance_vie']);
+export const DEFAULT_KAKEIBO_GOAL_PCT = 0.1;
 
-// Enveloppes rattachées à chaque ligne de la règle (servent au total et aux suggestions)
-function ruleEnvelopes(key, envelopes) {
-  switch (key) {
-    case 'needs':
-    case 'essentials': return envelopes.filter(e => e.type === 'need');
-    case 'wants': return envelopes.filter(e => e.type === 'want');
-    case 'pleasure': return envelopes.filter(e => e.type === 'want' && !TRAVEL_CATEGORIES.has(e.categoryId));
-    case 'travel': return envelopes.filter(e => TRAVEL_CATEGORIES.has(e.categoryId));
-    case 'savings': return envelopes.filter(e => e.type === 'saving');
-    case 'shortTerm': return envelopes.filter(e => e.type === 'saving' && !LONG_TERM_CATEGORIES.has(e.categoryId));
-    case 'longTerm': return envelopes.filter(e => e.type === 'saving' && LONG_TERM_CATEGORIES.has(e.categoryId));
-    default: return [];
-  }
+// Base du calcul : salaire entier, ou salaire − charges fixes (épargne programmée comprise)
+export function budgetRuleBase(salary, charges, includeFixed = true) {
+  const s = Number(salary) || 0;
+  return includeFixed ? s : s - totalFixedExSavings(charges) - totalProgrammedSavings(charges);
 }
 
-// Montants réels vs idéaux pour une règle. Retourne null si la base est nulle ou négative.
-// includeFixed (profil) : base = salaire entier, les charges fixes comptent dans les besoins / l'essentiel
-// et l'épargne programmée dans l'épargne (court terme pour 55/10/5/15/15).
-// Sinon base = salaire − charges fixes (épargne programmée comprise) et seules les enveloppes comptent.
-// Le reste du mois compte toujours en épargne (court terme : argent disponible, pas bloqué).
-export function budgetRuleBreakdown(ruleId, salary, charges, envelopes, { includeFixed = true } = {}) {
+// Montants réels vs objectifs pour une règle. Retourne null si la base est nulle ou négative.
+// includeFixed (profil) : base = salaire entier, les charges fixes comptent dans les besoins
+// et l'épargne programmée dans l'épargne. Sinon base = salaire − charges fixes (épargne
+// programmée comprise) et seules les enveloppes comptent.
+// Le reste du mois compte en épargne (court terme : argent disponible, pas bloqué),
+// sauf en base zéro où c'est justement le « reste à affecter ».
+// savingsGoal : objectif d'épargne Kakeibo en € (défaut 10 % de la base).
+export function budgetRuleBreakdown(ruleId, salary, charges, envelopes, { includeFixed = true, savingsGoal } = {}) {
   const rule = BUDGET_RULES[ruleId] || BUDGET_RULES['50-30-20'];
   const fixed = totalFixedExSavings(charges);
   const programmed = totalProgrammedSavings(charges);
-  const remainder = Math.max(0, computedSavings(salary, charges, envelopes));
-  const base = includeFixed ? (Number(salary) || 0) : (Number(salary) || 0) - fixed - programmed;
+  const loans = charges.filter(c => c.categoryId === 'loan').reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const leftover = computedSavings(salary, charges, envelopes);
+  const base = budgetRuleBase(salary, charges, includeFixed);
   if (base <= 0) return null;
 
-  const fixedPart = includeFixed ? fixed : 0;
-  const programmedPart = includeFixed ? programmed : 0;
-  const extra = {
-    needs: fixedPart,
-    essentials: fixedPart,
-    savings: programmedPart + remainder,
-    shortTerm: programmedPart + remainder,
+  const x = {
+    fixed: includeFixed ? fixed : 0,
+    loans: includeFixed ? loans : 0,
+    programmed: includeFixed ? programmed : 0,
+    remainder: Math.max(0, leftover),
   };
-  const rows = rule.rows.map(row => {
-    const envs = ruleEnvelopes(row.key, envelopes);
-    const actual = totalVariableEnvelopes(envs) + (extra[row.key] || 0);
-    const ideal = base * row.pct;
-    return {
-      ...row,
-      tip: `${Math.round(row.pct * 100)}%`,
-      actual,
-      ideal,
-      diff: actual - ideal,
-      topEnvelopes: [...envs].sort((a, b) => b.budgetMonthly - a.budgetMonthly).slice(0, 2),
-    };
-  });
-  return { rule, base, includeFixed, rows };
+  const rows = rule.rows
+    .filter(row => !row.onlyWithFixed || includeFixed)
+    .map(row => {
+      const envs = envelopes.filter(row.match);
+      const actual = totalVariableEnvelopes(envs) + (row.extra ? row.extra(x) : 0);
+      const ideal = row.goal
+        ? (Number(savingsGoal) > 0 ? Number(savingsGoal) : base * DEFAULT_KAKEIBO_GOAL_PCT)
+        : row.pct != null ? base * row.pct : null;
+      const { match: _m, extra: _e, ...rest } = row;
+      return {
+        ...rest,
+        saving: !!row.saving,
+        tip: row.pct != null ? `${Math.round(row.pct * 100)}%` : `${Math.round((actual / base) * 100)}% du budget`,
+        actual,
+        ideal,
+        diff: ideal != null ? actual - ideal : null,
+        topEnvelopes: [...envs].sort((a, b) => b.budgetMonthly - a.budgetMonthly).slice(0, 2),
+      };
+    });
+  return { rule, base, includeFixed, rows, toAssign: rule.zeroBased ? leftover : null };
 }
 
 // Règle conseillée à partir du profil (onboarding).
 // - Charges fixes ≥ 45 % du salaire : calcul sans les charges fixes, sinon l'essentiel paraît toujours dépassé.
+// - Crédits ≥ 10 % du salaire (calcul avec charges fixes) : 70/20/10, avec une ligne dédiée aux dettes.
 // - Besoins > 50 % de la base, ou envies déjà ≤ 20 % : 55/10/5/15/15 (plus de place pour l'essentiel, plus d'épargne).
 // - Sinon 50/30/20, qui laisse plus de marge pour les envies.
 export function recommendBudgetRule(salary, charges, envelopes) {
@@ -282,8 +359,12 @@ export function recommendBudgetRule(salary, charges, envelopes) {
   const needsShare = (needs + (includeFixed ? fixed : 0)) / base;
   const wantsShare = wants / base;
 
+  const loans = charges.filter(c => c.categoryId === 'loan').reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
   let ruleId = '50-30-20';
-  if (needsShare > 0.5) {
+  if (includeFixed && loans / s >= 0.1) {
+    ruleId = '70-20-10';
+    reasons.push(`Tes crédits font ${pct(loans / s)} % du salaire : la 70/20/10 leur réserve 10 %.`);
+  } else if (needsShare > 0.5) {
     ruleId = '55-10-5-15-15';
     reasons.push(`Tes besoins pèsent ${pct(needsShare)} % : la 55/10/5/15/15 leur laisse plus de place.`);
   } else if (wantsShare <= 0.2) {

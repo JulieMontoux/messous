@@ -314,14 +314,15 @@ export default function Dashboard({ navigate }) {
             </div>
           )}
 
-          {/* Budget idéal : 50/30/20 ou 55/10/5/15/15 */}
+          {/* Budget idéal : règle choisie dans le profil (ou ici) */}
           {netSalary > 0 && (() => {
             const ruleId = settings.budgetRule || '50-30-20';
             const breakdown = budgetRuleBreakdown(ruleId, netSalary, fixedCharges, envelopes, {
               includeFixed: profile.budgetIncludeFixed ?? true,
+              savingsGoal: profile.kakeiboSavingsGoal,
             });
             if (!breakdown) return null;
-            const { base, includeFixed, rows } = breakdown;
+            const { rule, base, includeFixed, rows, toAssign } = breakdown;
             return (
               <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
                 <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
@@ -331,25 +332,42 @@ export default function Dashboard({ navigate }) {
                       Base : {fmt(display(base))} {includeFixed ? '(salaire, charges fixes comprises)' : '(après charges fixes)'}
                     </p>
                   </div>
-                  <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+                  <select
+                    className="bg-slate-100 rounded-xl py-1.5 px-2 text-xs font-semibold text-primary border-0 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    value={ruleId}
+                    onChange={e => dispatch({ type: 'SET_BUDGET_RULE', payload: e.target.value })}
+                    aria-label="Méthode de budget"
+                  >
                     {Object.entries(BUDGET_RULES).map(([id, r]) => (
-                      <button
-                        key={id}
-                        onClick={() => dispatch({ type: 'SET_BUDGET_RULE', payload: id })}
-                        className={cn(
-                          'py-1 px-2 rounded-lg text-[11px] font-semibold transition-colors',
-                          ruleId === id ? 'bg-white text-primary shadow-sm' : 'text-slate-500'
-                        )}
-                      >
-                        {r.label}
-                      </button>
+                      <option key={id} value={id}>{r.label}</option>
                     ))}
-                  </div>
+                  </select>
                 </div>
+                {toAssign != null && (
+                  <div className={cn(
+                    'mb-4 rounded-xl p-3 flex items-center justify-between',
+                    Math.round(toAssign) === 0 ? 'bg-savings/10' : toAssign > 0 ? 'bg-warn/10' : 'bg-danger/10'
+                  )}>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-700">Reste à affecter</p>
+                      <p className="text-[10px] text-slate-500">
+                        {Math.round(toAssign) === 0 ? 'Chaque euro a une mission 👌'
+                          : toAssign > 0 ? 'Donne-lui une enveloppe (épargne, envies…)'
+                          : 'Tu as affecté plus que ton salaire'}
+                      </p>
+                    </div>
+                    <span className={cn('text-lg font-bold', Math.round(toAssign) === 0 ? 'text-savings' : toAssign > 0 ? 'text-warn' : 'text-danger')}>
+                      {fmt(display(toAssign))}
+                    </span>
+                  </div>
+                )}
                 <div className="space-y-4">
                   {rows.map(({ key, label, actual, ideal, diff, color, saving: isSaving, icon, tip, topEnvelopes }) => {
-                    const over = diff > 0;
-                    const barPct = Math.min(100, ideal > 0 ? (actual / ideal) * 100 : 0);
+                    const hasTarget = ideal != null;
+                    const over = hasTarget && diff > 0;
+                    const barPct = Math.min(100, hasTarget
+                      ? (ideal > 0 ? (actual / ideal) * 100 : 0)
+                      : (actual / base) * 100);
                     return (
                       <div key={key}>
                         <div className="flex items-center justify-between text-xs mb-1.5">
@@ -360,13 +378,15 @@ export default function Dashboard({ navigate }) {
                           <span className={cn('font-bold', over && !isSaving ? 'text-warn' : isSaving && over ? 'text-savings' : 'text-slate-600')}>
                             {fmt(display(actual))}
                           </span>
-                          <span className="text-slate-400">
-                            idéal {fmt(display(ideal))}
-                            {' '}
-                            <span className={cn('font-semibold', over && !isSaving ? 'text-warn' : isSaving && over ? 'text-savings' : 'text-slate-400')}>
-                              ({over ? '+' : ''}{fmt(display(diff))})
+                          {hasTarget && (
+                            <span className="text-slate-400">
+                              {rule.kakeibo ? 'objectif' : 'idéal'} {fmt(display(ideal))}
+                              {' '}
+                              <span className={cn('font-semibold', over && !isSaving ? 'text-warn' : isSaving && over ? 'text-savings' : 'text-slate-400')}>
+                                ({over ? '+' : ''}{fmt(display(diff))})
+                              </span>
                             </span>
-                          </span>
+                          )}
                         </div>
                         <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                           <div
@@ -379,7 +399,7 @@ export default function Dashboard({ navigate }) {
                             ↳ {topEnvelopes.map(e => `${e.name} (${fmt(e.budgetMonthly)})`).join(', ')}
                           </p>
                         )}
-                        {!over && isSaving && (
+                        {hasTarget && !over && isSaving && (
                           <p className="text-[10px] text-slate-400 mt-1">
                             ↳ encore {fmt(display(Math.abs(diff)))} à allouer
                           </p>
@@ -388,6 +408,11 @@ export default function Dashboard({ navigate }) {
                     );
                   })}
                 </div>
+                {rule.kakeibo && (
+                  <button onClick={() => navigate('history')} className="mt-4 text-xs font-medium text-primary hover:text-primary-dark">
+                    📓 Faire le bilan du mois dans l'historique →
+                  </button>
+                )}
               </div>
             );
           })()}

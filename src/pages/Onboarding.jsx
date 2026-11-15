@@ -5,7 +5,7 @@ import {
   FIXED_CATEGORIES, REGIONS, generateId, suggestEnvelopes, defaultFixedCharges, ENVELOPE_CATEGORIES,
 } from '../data/defaults';
 import { SUPERMARKETS } from '../data/supermarkets';
-import { fmt, recommendBudgetRule, budgetRuleBreakdown } from '../utils/budget';
+import { fmt, recommendBudgetRule, budgetRuleBreakdown, budgetRuleBase, DEFAULT_KAKEIBO_GOAL_PCT } from '../utils/budget';
 import TobaccoFields from '../components/TobaccoFields';
 import BudgetRulePicker from '../components/BudgetRulePicker';
 
@@ -410,8 +410,10 @@ export default function Onboarding() {
 
         {/* Step 5: Méthode de budget */}
         {step === 5 && (() => {
+          const includeFixed = profile.budgetIncludeFixed ?? true;
           const breakdown = budgetRuleBreakdown(budgetRule, salary, charges, envelopes, {
-            includeFixed: profile.budgetIncludeFixed ?? true,
+            includeFixed,
+            savingsGoal: profile.kakeiboSavingsGoal,
           });
           return (
             <div className="space-y-4">
@@ -431,22 +433,34 @@ export default function Onboarding() {
               <div className="card">
                 <BudgetRulePicker
                   ruleId={budgetRule}
-                  includeFixed={profile.budgetIncludeFixed ?? true}
+                  includeFixed={includeFixed}
                   onChangeRule={setBudgetRule}
                   onChangeIncludeFixed={v => set('budgetIncludeFixed', v)}
                   recommended={recommendation}
+                  savingsGoal={profile.kakeiboSavingsGoal}
+                  onChangeSavingsGoal={v => set('kakeiboSavingsGoal', v)}
+                  defaultGoal={budgetRuleBase(salary, charges, includeFixed) * DEFAULT_KAKEIBO_GOAL_PCT}
                 />
               </div>
 
               {breakdown && (
                 <div className="card space-y-1.5">
-                  <p className="text-xs text-slate-400 mb-1">Objectifs sur {fmt(breakdown.base)}</p>
+                  <p className="text-xs text-slate-400 mb-1">
+                    {breakdown.rule.zeroBased ? 'Répartition de ' : breakdown.rule.kakeibo ? 'Ton budget sur ' : 'Objectifs sur '}
+                    {fmt(breakdown.base)}
+                  </p>
                   {breakdown.rows.map(row => (
                     <div key={row.key} className="flex justify-between text-sm">
                       <span className="text-slate-600">{row.icon} {row.label} <span className="text-slate-400">({row.tip})</span></span>
-                      <span className="font-semibold text-slate-800">{fmt(row.ideal)}</span>
+                      <span className="font-semibold text-slate-800">{fmt(row.ideal ?? row.actual)}</span>
                     </div>
                   ))}
+                  {breakdown.toAssign != null && (
+                    <div className="flex justify-between text-sm border-t border-slate-100 pt-1.5">
+                      <span className="font-semibold text-slate-700">Reste à affecter (objectif 0 €)</span>
+                      <span className={`font-bold ${Math.round(breakdown.toAssign) === 0 ? 'text-savings' : 'text-warn'}`}>{fmt(breakdown.toAssign)}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
