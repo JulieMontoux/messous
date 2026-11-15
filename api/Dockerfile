@@ -1,5 +1,5 @@
 # Node 24 (LTS active) — Node 20 n'est plus maintenu depuis avril 2026
-FROM node:24-alpine
+FROM node:26-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
