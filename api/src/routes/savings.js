@@ -20,6 +20,7 @@ const toClient = r => ({
   actualSavings: r.actual_savings != null ? Number(r.actual_savings) : null,
   actualRemainder: r.actual_remainder != null ? Number(r.actual_remainder) : null,
   remainderToGoalId: r.remainder_to_goal_id || null,
+  review: r.review || '',
   closedAt: r.closed_at || null,
   recordedAt: r.recorded_at,
 });
@@ -65,7 +66,7 @@ router.put('/:month', async (req, res) => {
 router.put('/:month/close', async (req, res) => {
   const client = await pool.connect();
   try {
-    const { actualSavings, actualRemainder, remainderToGoalId = null, carryovers } = req.body;
+    const { actualSavings, actualRemainder, remainderToGoalId = null, carryovers, review = '' } = req.body;
     const month = req.params.month;
     if (!isMonth(month)) return res.status(400).json({ error: 'Mois invalide' });
     await client.query('BEGIN');
@@ -81,13 +82,13 @@ router.put('/:month/close', async (req, res) => {
       );
     }
     const { rows } = await client.query(
-      `INSERT INTO savings_history (user_id, month, actual_savings, actual_remainder, remainder_to_goal_id, closed_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
+      `INSERT INTO savings_history (user_id, month, actual_savings, actual_remainder, remainder_to_goal_id, review, closed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
        ON CONFLICT (user_id, month) DO UPDATE SET
          actual_savings = EXCLUDED.actual_savings, actual_remainder = EXCLUDED.actual_remainder,
-         remainder_to_goal_id = EXCLUDED.remainder_to_goal_id, closed_at = NOW()
+         remainder_to_goal_id = EXCLUDED.remainder_to_goal_id, review = EXCLUDED.review, closed_at = NOW()
        RETURNING *`,
-      [req.user.userId, month, actualSavings ?? null, actualRemainder ?? null, remainderToGoalId || null]
+      [req.user.userId, month, actualSavings ?? null, actualRemainder ?? null, remainderToGoalId || null, String(review || '').slice(0, 2000) || null]
     );
     if (remainderToGoalId && Number(actualRemainder) > 0) {
       await client.query(

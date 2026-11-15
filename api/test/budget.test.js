@@ -50,6 +50,26 @@ test('clôture du mois : restes reportés sur le mois suivant, remplacés si on 
   assert.equal(list.length, 0);
 });
 
+test('clôture du mois : bilan écrit (Kakeibo) enregistré, tronqué à 2000 caractères', async () => {
+  const u = await newUser();
+  let snap = (await u.put(`/api/savings/${prevMonth}/close`, { actualSavings: 50, actualRemainder: 0, review: 'Moins de restos' }).expect(200)).body;
+  assert.equal(snap.review, 'Moins de restos');
+  snap = (await u.put(`/api/savings/${prevMonth}/close`, { actualSavings: 50, actualRemainder: 0, review: 'x'.repeat(3000) }).expect(200)).body;
+  assert.equal(snap.review.length, 2000);
+  snap = (await u.put(`/api/savings/${prevMonth}/close`, { actualSavings: 50, actualRemainder: 0 }).expect(200)).body;
+  assert.equal(snap.review, '');
+});
+
+test('profil : calcul avec / sans charges fixes et objectif Kakeibo', async () => {
+  const u = await newUser();
+  let p = (await u.get('/api/profile').expect(200)).body;
+  assert.deepEqual([p.budgetIncludeFixed, p.kakeiboSavingsGoal], [true, 0]);
+  p = (await u.put('/api/profile', { budgetIncludeFixed: false, kakeiboSavingsGoal: 250 }).expect(200)).body;
+  assert.deepEqual([p.budgetIncludeFixed, p.kakeiboSavingsGoal], [false, 250]);
+  p = (await u.put('/api/profile', { kakeiboSavingsGoal: 0 }).expect(200)).body;
+  assert.equal(p.kakeiboSavingsGoal, 0);
+});
+
 test('bilan mensuel : dépenses par enveloppe, dépassements, comparaison avec le mois précédent', async () => {
   const { renderMonthlyReport, shiftMonth } = require('../src/lib/report');
   const u = await newUser();

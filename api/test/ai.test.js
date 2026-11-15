@@ -101,3 +101,74 @@ test('astuces IA : erreur pendant le flux transmise au navigateur', async () => 
     server.close();
   }
 });
+
+// Avis sur la méthode de budget : le client envoie la comparaison calculée sur l'historique
+const comparison = {
+  months: ['2026-10', '2026-09'],
+  perMonth: [{ month: '2026-10', needs: 400, wants: 300, savings: 100 }],
+  best: '80-20',
+  rules: [
+    { id: '80-20', label: '80/20', score: 3.2, rows: [{ label: 'Épargne', pct: 0.2, actual: 500, ideal: 440 }] },
+    { id: 'zero-based', label: 'Base zéro', score: null, toAssign: 120, rows: [{ label: 'Besoins', pct: null, actual: 400, ideal: null }] },
+    { id: 'kakeibo', label: 'Kakeibo', score: null, rows: [] },
+    { id: 'pirate', label: 'Inconnue', score: 0, rows: [] },
+  ],
+};
+
+function jsonOllama(response, onBody = () => {}) {
+  return fakeOllama((body, res) => { onBody(body); res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ response })); });
+}
+
+test('méthode de budget : réponse JSON de l\'IA validée, prompt avec les chiffres réels', async () => {
+  let sent;
+  const server = await jsonOllama(JSON.stringify({ ruleId: 'kakeibo', includeFixed: false, reasons: ['Raison A', '', 42, 'Raison B'], tip: ' Commence petit ' }), b => { sent = b; });
+  try {
+    const u = await richUser();
+    await u.post('/api/charges', { name: 'Prêt', amount: 1200, categoryId: 'loan', frequency: 'yearly', dueMonth: 2 });
+    await u.post('/api/charges', { name: 'Ancien prêt', amount: 300, categoryId: 'loan', endMonth: '2020-01' });
+    const r = (await u.post('/api/ai/budget-method', { comparison, currentRuleId: '50-30-20', includeFixed: true }).expect(200)).body;
+    assert.deepEqual(r, { ruleId: 'kakeibo', includeFixed: false, reasons: ['Raison A', 'Raison B'], tip: 'Commence petit', fallback: false, months: comparison.months });
+    assert.equal(sent.format, 'json');
+    assert.match(sent.prompt, /Salaire net : 2500€/);
+    assert.match(sent.prompt, /dont crédits 100€/);
+    assert.match(sent.prompt, /80-20 \(80\/20\) — écart moyen 3.2 %/);
+    assert.match(sent.prompt, /reste à affecter 120€/);
+    assert.match(sent.prompt, /2026-10 : besoins 400€, envies 300€/);
+    assert.doesNotMatch(sent.prompt, /pirate/);
+  } finally {
+    server.close();
+  }
+});
+
+test('méthode de budget : réponse inutilisable → méthode la plus proche selon les chiffres', async () => {
+  for (const response of ['pas du json', JSON.stringify({ ruleId: 'pirate', reasons: ['x'] }), JSON.stringify({ ruleId: 'sixty' })]) {
+    const server = await jsonOllama(response);
+    try {
+      const u = await richUser();
+      const r = (await u.post('/api/ai/budget-method', { comparison, includeFixed: true }).expect(200)).body;
+      assert.equal(r.ruleId, '80-20');
+      assert.equal(r.fallback, true);
+      assert.equal(r.includeFixed, true);
+      assert.equal(r.reasons.length, 1);
+    } finally {
+      server.close();
+    }
+  }
+});
+
+test('méthode de budget : sans historique → 400, profil absent → 400, Ollama en erreur → 502 (pas de nouvel essai)', async () => {
+  const u = await newUser();
+  await u.post('/api/ai/budget-method', {}).expect(400);
+  await u.post('/api/ai/budget-method', { comparison: { months: [], rules: [] } }).expect(400);
+  const { userId } = require('./helpers');
+  await pool.query('DELETE FROM profiles WHERE user_id = $1', [await userId(u)]);
+  await u.post('/api/ai/budget-method', { comparison }).expect(400);
+
+  const server = await fakeOllama((body, res) => { res.statusCode = 500; res.end(); });
+  try {
+    const v = await richUser();
+    assert.match((await v.post('/api/ai/budget-method', { comparison }).expect(502)).body.error, /Ollama 500/);
+  } finally {
+    server.close();
+  }
+});

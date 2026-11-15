@@ -190,9 +190,18 @@ test('réglages : ligne absente (ancien compte) → valeur par défaut, puis cr�
   const { userId } = require('./helpers');
   const u = await newUser();
   await pool.query('DELETE FROM settings WHERE user_id = $1', [await userId(u)]);
-  assert.deepEqual((await u.get('/api/settings').expect(200)).body, { viewMode: 'monthly' });
+  assert.deepEqual((await u.get('/api/settings').expect(200)).body, { viewMode: 'monthly', budgetRule: '50-30-20' });
   assert.equal((await u.put('/api/settings', { viewMode: 'weekly' }).expect(200)).body.view_mode, 'weekly');
   assert.equal((await u.put('/api/settings', { viewMode: 'n-importe' }).expect(200)).body.view_mode, 'monthly');
+});
+
+test('réglages : méthode de budget enregistrée, inconnue ignorée, conservée quand on change la vue', async () => {
+  const u = await newUser();
+  assert.equal((await u.put('/api/settings', { budgetRule: 'kakeibo' }).expect(200)).body.budget_rule, 'kakeibo');
+  const r = (await u.put('/api/settings', { viewMode: 'weekly' }).expect(200)).body;
+  assert.deepEqual([r.view_mode, r.budget_rule], ['weekly', 'kakeibo']);
+  const r2 = (await u.put('/api/settings', { budgetRule: 'inventee' }).expect(200)).body;
+  assert.deepEqual([r2.view_mode, r2.budget_rule], ['weekly', 'kakeibo']);
 });
 
 test('profil : valeurs absentes en base → valeurs par défaut ; profil manquant → objet vide', async () => {

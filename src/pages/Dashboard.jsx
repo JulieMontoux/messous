@@ -4,14 +4,23 @@ import {
   fmt, totalFixedExSavings, totalProgrammedSavings,
   totalExpenseEnvelopes, totalSavingEnvelopesBudget,
   computedSavings, totalSavings, budgetHealth, HEALTH_CONFIG, donutData, weeklyAmount,
-  realSpending, envelopeForecast, periodDaysFor, idealSplit, pctLabel, carryoverFor, monthEndForecast, fmtDec, tobaccoStats,
+  realSpending, envelopeForecast, periodDaysFor, idealSplit, carryoverFor, monthEndForecast, fmtDec, tobaccoStats,
+  BUDGET_RULES, budgetRuleBreakdown,
 } from '../utils/budget';
 import { periodStart, monthKey, previousMonthKey, isLastDayOfMonth, daysInMonth, addDays, toLocalDate, formatDay } from '../utils/period';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { getTobaccoType } from '../data/defaults';
-import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard, Landmark, Pencil, ShoppingBag, AlertTriangle, Briefcase, Leaf, Flame, Banknote, Check } from 'lucide-react';
+import { TrendingUp, PiggyBank, ArrowUpRight, Wallet, Receipt, CalendarCheck, ChevronRight, CreditCard, Landmark, Pencil, ShoppingBag, AlertTriangle, Briefcase, Leaf, Flame, Banknote, Check, Pin, House, Plane, HandCoins, Heart, BookOpen, Umbrella, Hourglass, NotebookPen } from 'lucide-react';
 import { cn } from '../lib/utils';
+
+// Icône de chaque ligne du « Budget idéal » (clés de BUDGET_RULES)
+const RULE_ROW_ICONS = {
+  needs: Receipt, essentials: Receipt, committed: Receipt, survival: Receipt, fixed: Pin,
+  wants: ShoppingBag, pleasure: ShoppingBag, fun: ShoppingBag, play: ShoppingBag, leisure: ShoppingBag, spending: CreditCard,
+  living: House, travel: Plane, debts: HandCoins, give: Heart, education: BookOpen, culture: BookOpen, unexpected: Umbrella,
+  savings: PiggyBank, shortTerm: PiggyBank, longTerm: TrendingUp, freedom: TrendingUp, retirement: Hourglass,
+};
 
 const MONTH_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
@@ -494,38 +503,64 @@ export default function Dashboard({ navigate }) {
             </div>
           )}
 
-          {/* Budget idéal 50/20/30 */}
+          {/* Budget idéal : règle choisie dans le profil (ou ici) */}
           {netSalary > 0 && (() => {
-            const afterFixed = netSalary - fixed - programmedSav;
-            if (afterFixed <= 0) return null;
-            const actualNeeds = envelopes.filter(e => e.type === 'need').reduce((s, e) => s + (Number(e.budgetMonthly) || 0), 0);
-            const actualWants = envelopes.filter(e => e.type === 'want').reduce((s, e) => s + (Number(e.budgetMonthly) || 0), 0);
-            const actualSavAlloc = savingEnv + Math.max(0, remainder);
-            const split = idealSplit(profile);
-            const rows = [
-              { label: 'Besoins', pct: split.needs, actual: actualNeeds, color: '#3b82f6', type: 'need', Icon: Receipt, tip: pctLabel(split.needs) },
-              { label: 'Épargne', pct: split.savings, actual: actualSavAlloc, color: '#10b981', type: 'saving', Icon: PiggyBank, tip: pctLabel(split.savings) },
-              { label: 'Plaisirs', pct: split.wants, actual: actualWants, color: '#8b5cf6', type: 'want', Icon: ShoppingBag, tip: pctLabel(split.wants) },
-            ];
+            const ruleId = settings.budgetRule || '50-30-20';
+            const breakdown = budgetRuleBreakdown(ruleId, netSalary, fixedCharges, envelopes, {
+              includeFixed: profile.budgetIncludeFixed ?? true,
+              savingsGoal: profile.kakeiboSavingsGoal,
+              split: idealSplit(profile),
+            });
+            if (!breakdown) return null;
+            const { rule, base, includeFixed, rows, toAssign } = breakdown;
             return (
               <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-5">
-                <div className="mb-4">
-                  <p className="text-sm font-semibold text-slate-700">Budget idéal</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Base : {fmt(display(afterFixed))}</p>
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700">Budget idéal</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Base : {fmt(display(base))} {includeFixed ? '(salaire, charges fixes comprises)' : '(après charges fixes)'}
+                    </p>
+                  </div>
+                  <select
+                    className="bg-slate-100 rounded-xl py-1.5 px-2 text-xs font-semibold text-primary border-0 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    value={ruleId}
+                    onChange={e => dispatch({ type: 'SET_BUDGET_RULE', payload: e.target.value })}
+                    aria-label="Méthode de budget"
+                  >
+                    {Object.entries(BUDGET_RULES).map(([id, r]) => (
+                      <option key={id} value={id}>{r.label}</option>
+                    ))}
+                  </select>
                 </div>
+                {toAssign != null && (
+                  <div className={cn(
+                    'mb-4 rounded-xl p-3 flex items-center justify-between',
+                    Math.round(toAssign) === 0 ? 'bg-savings/10' : toAssign > 0 ? 'bg-warn/10' : 'bg-danger/10'
+                  )}>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-700">Reste à affecter</p>
+                      <p className="text-xs text-slate-500">
+                        {Math.round(toAssign) === 0 ? 'Chaque euro a une mission 👌'
+                          : toAssign > 0 ? 'Donne-lui une enveloppe (épargne, envies…)'
+                          : 'Tu as affecté plus que ton salaire'}
+                      </p>
+                    </div>
+                    <span className={cn('text-lg font-bold', Math.round(toAssign) === 0 ? 'text-savings' : toAssign > 0 ? 'text-warn' : 'text-danger')}>
+                      {fmt(display(toAssign))}
+                    </span>
+                  </div>
+                )}
                 <div className="space-y-4">
-                  {rows.map(({ label, pct, actual, color, type, Icon, tip }) => {
-                    const ideal = afterFixed * pct;
-                    const diff = actual - ideal;
-                    const over = diff > 0;
-                    const isSaving = type === 'saving';
-                    const barPct = Math.min(100, ideal > 0 ? (actual / ideal) * 100 : 0);
-                    const topEnv = envelopes
-                      .filter(e => e.type === type && type !== 'saving')
-                      .sort((a, b) => b.budgetMonthly - a.budgetMonthly)
-                      .slice(0, 2);
+                  {rows.map(({ key, label, actual, ideal, diff, color, saving: isSaving, tip, topEnvelopes }) => {
+                    const Icon = RULE_ROW_ICONS[key] || Receipt;
+                    const hasTarget = ideal != null;
+                    const over = hasTarget && diff > 0;
+                    const barPct = Math.min(100, hasTarget
+                      ? (ideal > 0 ? (actual / ideal) * 100 : 0)
+                      : (actual / base) * 100);
                     return (
-                      <div key={label}>
+                      <div key={key}>
                         <div className="flex items-center justify-between text-xs mb-1.5">
                           <span className="font-semibold text-slate-700 flex items-center gap-1.5"><Icon size={12} className="text-slate-400" />{label}</span>
                           <span className="text-slate-400 font-medium">{tip}</span>
@@ -534,13 +569,15 @@ export default function Dashboard({ navigate }) {
                           <span className={cn('font-semibold tabular-nums', over && !isSaving ? 'text-warn' : isSaving && over ? 'text-savings' : 'text-slate-600')}>
                             {fmt(display(actual))}
                           </span>
-                          <span className="text-slate-400">
-                            idéal {fmt(display(ideal))}
-                            {' '}
-                            <span className={cn('font-semibold', over && !isSaving ? 'text-warn' : isSaving && over ? 'text-savings' : 'text-slate-400')}>
-                              ({over ? '+' : ''}{fmt(display(diff))})
+                          {hasTarget && (
+                            <span className="text-slate-400">
+                              {rule.kakeibo ? 'objectif' : 'idéal'} {fmt(display(ideal))}
+                              {' '}
+                              <span className={cn('font-semibold', over && !isSaving ? 'text-warn' : isSaving && over ? 'text-savings' : 'text-slate-400')}>
+                                ({over ? '+' : ''}{fmt(display(diff))})
+                              </span>
                             </span>
-                          </span>
+                          )}
                         </div>
                         <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                           <div
@@ -548,12 +585,12 @@ export default function Dashboard({ navigate }) {
                             style={{ width: `${barPct}%`, background: over && !isSaving ? '#f59e0b' : color }}
                           />
                         </div>
-                        {over && !isSaving && topEnv.length > 0 && (
+                        {over && !isSaving && topEnvelopes.length > 0 && (
                           <p className="text-xs text-warn mt-1">
-                            ↳ {topEnv.map(e => `${e.name} (${fmt(e.budgetMonthly)})`).join(', ')}
+                            ↳ {topEnvelopes.map(e => `${e.name} (${fmt(e.budgetMonthly)})`).join(', ')}
                           </p>
                         )}
-                        {!over && isSaving && (
+                        {hasTarget && !over && isSaving && (
                           <p className="text-xs text-slate-400 mt-1">
                             ↳ encore {fmt(display(Math.abs(diff)))} à allouer
                           </p>
@@ -562,6 +599,11 @@ export default function Dashboard({ navigate }) {
                     );
                   })}
                 </div>
+                {rule.kakeibo && (
+                  <button onClick={() => navigate('history')} className="mt-4 text-xs font-medium text-primary hover:text-primary-dark flex items-center gap-1.5">
+                    <NotebookPen size={12} />Faire le bilan du mois dans l'historique →
+                  </button>
+                )}
               </div>
             );
           })()}

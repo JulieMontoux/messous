@@ -59,7 +59,8 @@ export function installFakeApi(overrides = {}) {
   on('POST', /^\/api\/profile\/test-email$/, () => (db.failTestEmail ? [400, { error: 'SMTP non configuré' }] : { ok: true, to: db.profile.accountEmail }));
   on('POST', /^\/api\/profile\/reset$/, b => (b.password === 'motdepasse1' ? { ok: true } : [403, { error: 'Mot de passe incorrect' }]));
   on('GET', /^\/api\/settings$/, () => db.settings);
-  on('PUT', /^\/api\/settings$/, b => Object.assign(db.settings, { view_mode: b.viewMode }));
+  on('PUT', /^\/api\/settings$/, b => Object.assign(db.settings,
+    b.viewMode ? { view_mode: b.viewMode } : {}, b.budgetRule ? { budget_rule: b.budgetRule } : {}));
 
   // Charges, enveloppes, dépenses
   const crud = (name, path) => {
@@ -153,6 +154,9 @@ export function installFakeApi(overrides = {}) {
       `data: ${JSON.stringify({ token: '1. Réduis ' })}\n\n`,
       `data: ${JSON.stringify({ token: 'les restos.' })}\n\ndata: ${JSON.stringify({ done: true })}\n\n`,
     ])));
+  on('POST', /^\/api\/ai\/budget-method$/, () => (db.aiMethodError ? [502, { error: db.aiMethodError }] : db.aiMethod || {
+    ruleId: 'six-jars', includeFixed: false, reasons: ['Tes envies restent modérées.'], tip: 'Crée une enveloppe Formation.', fallback: false, months: ['2026-10', '2026-09', '2026-08'],
+  }));
   on('GET', /^\/api\/push\/public-key$/, () => ({ publicKey: 'BAAA' }));
   on('POST', /^\/api\/push\/(subscribe|unsubscribe|test)$/, () => ({ ok: true, sent: 1 }));
   on('GET', /^\/api\/export\/(\w+)\.csv$/, () => (db.exportError ? [500, { error: 'panne' }] : 'Date;Montant\n'));

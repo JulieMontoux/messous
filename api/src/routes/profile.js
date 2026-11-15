@@ -38,6 +38,8 @@ function toClient(r) {
     monthlyReportEmail: r.monthly_report_email ?? true,
     theme: r.theme || 'auto',
     tobaccoQuitDate: r.tobacco_quit_date || null,
+    budgetIncludeFixed: r.budget_include_fixed ?? true,
+    kakeiboSavingsGoal: r.kakeibo_savings_goal != null ? Number(r.kakeibo_savings_goal) : 0,
   };
 }
 
@@ -68,6 +70,8 @@ const FIELDS = {
   monthlyReportEmail: 'monthly_report_email',
   theme: ['theme', v => (['auto', 'light', 'dark'].includes(v) ? v : 'auto')],
   tobaccoQuitDate: ['tobacco_quit_date', v => v || null],
+  budgetIncludeFixed: 'budget_include_fixed',
+  kakeiboSavingsGoal: ['kakeibo_savings_goal', v => Number(v) || null],
 };
 
 // Applique un nouveau salaire programmé dès que son mois d'effet est arrivé

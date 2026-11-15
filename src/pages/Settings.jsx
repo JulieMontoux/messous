@@ -6,12 +6,14 @@ import { useAuth } from '../context/AuthContext';
 import { REGIONS, ENVELOPE_CATEGORIES, generateId, getTobaccoType, tobaccoMonthlyBudget } from '../data/defaults';
 import { SUPERMARKETS, getSupermarket } from '../data/supermarkets';
 import { api } from '../api/client';
-import { fmt } from '../utils/budget';
+import { fmt, recommendBudgetRule, budgetRuleBase, idealSplit, DEFAULT_KAKEIBO_GOAL_PCT } from '../utils/budget';
 import { monthKey } from '../utils/period';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
 import TobaccoFields from '../components/TobaccoFields';
 import AccountCard from '../components/AccountCard';
+import BudgetRulePicker from '../components/BudgetRulePicker';
+import AiBudgetAdvice from '../components/AiBudgetAdvice';
 
 function Counter({ label, value, onChange }) {
   return (
@@ -220,8 +222,10 @@ function IdealSplitCard({ profile, dispatch }) {
 
   return (
     <div className="card space-y-3">
-      <SectionTitle>Budget idéal</SectionTitle>
-      <p className="text-xs text-slate-400 -mt-2">Répartition de ce qui reste après les charges fixes (règle 50/30/20 par défaut).</p>
+      <SectionTitle>Répartition 50/30/20 personnalisée</SectionTitle>
+      <p className="text-xs text-slate-400 -mt-2">
+        Adapte les pourcentages de la règle 50/30/20 (calcul {profile.budgetIncludeFixed ?? true ? 'sur le salaire entier' : 'sur ce qui reste après les charges fixes'}).
+      </p>
       <div className="grid grid-cols-3 gap-2">
         {fields.map(f => (
           <div key={f.key}>
@@ -591,12 +595,29 @@ export default function Settings() {
           onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { isSmoker: v } })}
         />
       </div>
+
+      {/* Budget idéal */}
+      <div className="card">
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Budget idéal</p>
+        <BudgetRulePicker
+          ruleId={state.settings.budgetRule || '50-30-20'}
+          includeFixed={profile.budgetIncludeFixed ?? true}
+          onChangeRule={id => dispatch({ type: 'SET_BUDGET_RULE', payload: id })}
+          onChangeIncludeFixed={v => dispatch({ type: 'UPDATE_PROFILE', payload: { budgetIncludeFixed: v } })}
+          recommended={recommendBudgetRule(profile.netSalary, state.fixedCharges, envelopes)}
+          split={idealSplit(profile)}
+          savingsGoal={profile.kakeiboSavingsGoal}
+          onChangeSavingsGoal={v => dispatch({ type: 'UPDATE_PROFILE', payload: { kakeiboSavingsGoal: v } })}
+          defaultGoal={budgetRuleBase(profile.netSalary, state.fixedCharges, profile.budgetIncludeFixed ?? true) * DEFAULT_KAKEIBO_GOAL_PCT}
+        />
+        <AiBudgetAdvice />
+      </div>
       </div>
 
       <div className="space-y-4">
       {profile.isSmoker && <TobaccoCard profile={profile} envelopes={envelopes} dispatch={dispatch} />}
 
-      <IdealSplitCard profile={profile} dispatch={dispatch} />
+      {(state.settings.budgetRule || '50-30-20') === '50-30-20' && <IdealSplitCard profile={profile} dispatch={dispatch} />}
 
       <AlertsCard profile={profile} dispatch={dispatch} />
 

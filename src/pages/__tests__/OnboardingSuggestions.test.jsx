@@ -5,7 +5,7 @@ import Suggestions from '../Suggestions';
 import { renderPage } from '../../test/render';
 
 describe('Démarrage', () => {
-  it('les 5 étapes : profil, foyer, habitudes (tabac), charges, enveloppes, puis création', async () => {
+  it('les 6 étapes : profil, foyer, habitudes (tabac), charges, enveloppes, méthode de budget, puis création', async () => {
     const { user, fake } = await renderPage(Onboarding, { api: { profile: { onboardingDone: false } } });
     const next = () => user.click(screen.getByRole('button', { name: /Continuer/ }));
     expect(screen.getByRole('button', { name: /Continuer/ })).toBeDisabled();
@@ -60,7 +60,15 @@ describe('Démarrage', () => {
     await user.clear(budgets[0]);
     await user.type(budgets[0], '5000');
     expect(screen.getByText('Épargne disponible')).toBeInTheDocument();
+    await next();
+
+    // Méthode de budget : une règle conseillée, qu'on peut changer avant de valider
+    expect(screen.getByText(/Méthode de budget/)).toBeInTheDocument();
+    expect(screen.getAllByText('Conseillé').length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: /Kakeibo/ }));
+    expect(screen.getByText(/Objectif d'épargne Kakeibo/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /C'est parti/ }));
+    await waitFor(() => expect(fake.called('PUT', /\/api\/settings$/).at(-1).body).toMatchObject({ budgetRule: 'kakeibo' }));
     await waitFor(() => expect(fake.called('PUT', /\/api\/profile$/).at(-1).body).toMatchObject({ firstName: 'Camille', onboardingDone: true, tobaccoType: 'tube' }));
     await waitFor(() => expect(fake.called('POST', /\/api\/envelopes$/).length).toBeGreaterThan(3));
   });
