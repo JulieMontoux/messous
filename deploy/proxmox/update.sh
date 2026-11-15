@@ -59,8 +59,10 @@ if [ -d "$APP_DIR/secrets" ]; then
   find "$APP_DIR/secrets" -type f -exec chmod 400 {} +
 fi
 
-export APP_VERSION
+export APP_VERSION SECURITY_REFRESH
 APP_VERSION="$(git rev-parse --short HEAD)-$(date +%s)"
+# Correctifs de sécurité Alpine réappliqués au moins une fois par jour (couche « apk upgrade »)
+SECURITY_REFRESH="$(date +%F)"
 docker compose up -d --build --remove-orphans
 docker image prune -f >/dev/null
 

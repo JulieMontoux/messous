@@ -203,6 +203,8 @@ jobs:
           load: true
           push: false
           tags: messous-${{ matrix.name }}:ci
+          # Relance « apk upgrade » à chaque build (le reste de l'image vient du cache)
+          build-args: SECURITY_REFRESH=${{ github.run_id }}-${{ github.run_attempt }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
       - name: L'image démarre sans droits root

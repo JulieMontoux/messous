@@ -57,6 +57,8 @@ services:
   api:
     build:
       context: ./api
+      args:
+        SECURITY_REFRESH: ${SECURITY_REFRESH:-}
       provenance: false
     restart: unless-stopped
     environment:
@@ -93,6 +95,7 @@ services:
       context: .
       args:
         APP_VERSION: ${APP_VERSION:-dev}
+        SECURITY_REFRESH: ${SECURITY_REFRESH:-}
       provenance: false
     restart: unless-stopped
     ports:

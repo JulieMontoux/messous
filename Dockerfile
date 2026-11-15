@@ -9,9 +9,13 @@ RUN npm run build && find /app/dist/assets -type f \( -name "*.js" -o -name "*.c
 
 # nginx sans droits root (écoute sur 8080)
 FROM nginxinc/nginx-unprivileged:alpine
-# Correctifs de sécurité Alpine (OpenSSL, libxml…) puis retour à l'utilisateur sans droits
+# Correctifs de sécurité Alpine (OpenSSL, libxml, libxslt…) puis retour à l'utilisateur sans droits.
+# SECURITY_REFRESH change à chaque build de CI (et chaque jour au déploiement) : sans lui, Docker
+# réutilise la couche en cache et garde des paquets vulnérables déjà corrigés chez Alpine.
 USER root
-RUN apk upgrade --no-cache && apk add --no-cache 'libexpat>=2.10.0'
+ARG SECURITY_REFRESH=
+RUN echo "Correctifs Alpine : ${SECURITY_REFRESH:-sans date}" \
+  && apk upgrade --no-cache && apk add --no-cache 'libexpat>=2.10.0'
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY nginx-security-headers.conf /etc/nginx/security-headers.conf
