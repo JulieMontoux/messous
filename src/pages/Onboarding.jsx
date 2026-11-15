@@ -5,10 +5,11 @@ import {
   FIXED_CATEGORIES, REGIONS, generateId, suggestEnvelopes, defaultFixedCharges, ENVELOPE_CATEGORIES,
 } from '../data/defaults';
 import { SUPERMARKETS } from '../data/supermarkets';
-import { fmt } from '../utils/budget';
+import { fmt, recommendBudgetRule, budgetRuleBreakdown } from '../utils/budget';
 import TobaccoFields from '../components/TobaccoFields';
+import BudgetRulePicker from '../components/BudgetRulePicker';
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
 
 function StepBar({ step }) {
   return (
@@ -65,6 +66,8 @@ export default function Onboarding() {
   const [envelopes, setEnvelopes] = useState([]);
   const [newCharge, setNewCharge] = useState({ name: '', categoryId: 'housing', amount: '' });
   const [showAddCharge, setShowAddCharge] = useState(false);
+  const [recommendation, setRecommendation] = useState(null);
+  const [budgetRule, setBudgetRule] = useState('50-30-20');
 
   const set = (key, val) => setProfile(p => ({ ...p, [key]: val }));
   const setPet = (pet, val) => setProfile(p => ({ ...p, pets: { ...p.pets, [pet]: val } }));
@@ -93,6 +96,13 @@ export default function Onboarding() {
       }));
       setEnvelopes(newEnvelopes);
     }
+    if (step === 4) {
+      // Règle conseillée à partir des charges et des enveloppes ajustées
+      const rec = recommendBudgetRule(Number(profile.netSalary) || 0, charges, envelopes);
+      setRecommendation(rec);
+      setBudgetRule(rec.ruleId);
+      set('budgetIncludeFixed', rec.includeFixed);
+    }
     setStep(s => Math.min(TOTAL_STEPS - 1, s + 1));
   }
 
@@ -109,6 +119,7 @@ export default function Onboarding() {
         envelopes,
       },
     });
+    dispatch({ type: 'SET_BUDGET_RULE', payload: budgetRule });
   }
 
   function addCharge() {
@@ -396,6 +407,51 @@ export default function Onboarding() {
             </div>
           </div>
         )}
+
+        {/* Step 5: Méthode de budget */}
+        {step === 5 && (() => {
+          const breakdown = budgetRuleBreakdown(budgetRule, salary, charges, envelopes, {
+            includeFixed: profile.budgetIncludeFixed ?? true,
+          });
+          return (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-800">Méthode de budget 🧮</h2>
+                <p className="text-slate-500 mt-1 text-sm">D'après ton profil, voici le calcul idéal conseillé. Tu pourras le changer dans le profil.</p>
+              </div>
+
+              {recommendation?.reasons.length > 0 && (
+                <div className="card bg-savings/5 border-savings/20 space-y-1">
+                  {recommendation.reasons.map(r => (
+                    <p key={r} className="text-xs text-slate-600">💡 {r}</p>
+                  ))}
+                </div>
+              )}
+
+              <div className="card">
+                <BudgetRulePicker
+                  ruleId={budgetRule}
+                  includeFixed={profile.budgetIncludeFixed ?? true}
+                  onChangeRule={setBudgetRule}
+                  onChangeIncludeFixed={v => set('budgetIncludeFixed', v)}
+                  recommended={recommendation}
+                />
+              </div>
+
+              {breakdown && (
+                <div className="card space-y-1.5">
+                  <p className="text-xs text-slate-400 mb-1">Objectifs sur {fmt(breakdown.base)}</p>
+                  {breakdown.rows.map(row => (
+                    <div key={row.key} className="flex justify-between text-sm">
+                      <span className="text-slate-600">{row.icon} {row.label} <span className="text-slate-400">({row.tip})</span></span>
+                      <span className="font-semibold text-slate-800">{fmt(row.ideal)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Navigation */}
         <div className="flex gap-3 mt-6">

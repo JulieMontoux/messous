@@ -5,10 +5,11 @@ import { useAuth } from '../context/AuthContext';
 import { REGIONS, ENVELOPE_CATEGORIES, generateId, getTobaccoType, tobaccoMonthlyBudget } from '../data/defaults';
 import { SUPERMARKETS, getSupermarket } from '../data/supermarkets';
 import { api } from '../api/client';
-import { fmt } from '../utils/budget';
+import { fmt, recommendBudgetRule } from '../utils/budget';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
 import TobaccoFields from '../components/TobaccoFields';
+import BudgetRulePicker from '../components/BudgetRulePicker';
 
 function Counter({ label, value, onChange }) {
   return (
@@ -264,13 +265,17 @@ export default function Settings() {
           value={profile.isSmoker}
           onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { isSmoker: v } })}
         />
-        <Toggle
-          label="🧮 Budget idéal avec les charges fixes"
-          sub={profile.budgetIncludeFixed ?? true
-            ? 'Calcul sur le salaire entier, charges fixes comptées dans les besoins'
-            : 'Calcul sur le salaire moins les charges fixes'}
-          value={profile.budgetIncludeFixed ?? true}
-          onChange={v => dispatch({ type: 'UPDATE_PROFILE', payload: { budgetIncludeFixed: v } })}
+      </div>
+
+      {/* Budget idéal */}
+      <div className="card">
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Budget idéal</p>
+        <BudgetRulePicker
+          ruleId={state.settings.budgetRule || '50-30-20'}
+          includeFixed={profile.budgetIncludeFixed ?? true}
+          onChangeRule={id => dispatch({ type: 'SET_BUDGET_RULE', payload: id })}
+          onChangeIncludeFixed={v => dispatch({ type: 'UPDATE_PROFILE', payload: { budgetIncludeFixed: v } })}
+          recommended={recommendBudgetRule(profile.netSalary, state.fixedCharges, envelopes)}
         />
       </div>
       </div>

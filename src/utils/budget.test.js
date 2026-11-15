@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { budgetRuleBreakdown } from './budget';
+import { budgetRuleBreakdown, recommendBudgetRule } from './budget';
 
 const charges = [
   { categoryId: 'housing', amount: 700 },
@@ -56,5 +56,34 @@ describe('budgetRuleBreakdown', () => {
     expect(budgetRuleBreakdown('nope', 2000, charges, envelopes).rule.label).toBe('50/30/20');
     expect(budgetRuleBreakdown('55-10-5-15-15', 0, charges, envelopes)).toBeNull();
     expect(budgetRuleBreakdown('50-30-20', 800, charges, envelopes, { includeFixed: false })).toBeNull();
+  });
+});
+
+describe('recommendBudgetRule', () => {
+  const env = (type, budgetMonthly) => ({ type, budgetMonthly, categoryId: 'other' });
+
+  it('envies élevées, charges raisonnables → 50/30/20 avec charges fixes', () => {
+    const r = recommendBudgetRule(3000, [{ categoryId: 'housing', amount: 900 }], [env('need', 400), env('want', 700)]);
+    expect(r).toMatchObject({ ruleId: '50-30-20', includeFixed: true });
+    expect(r.reasons).toHaveLength(2);
+  });
+
+  it('envies faibles → 55/10/5/15/15', () => {
+    const r = recommendBudgetRule(3000, [{ categoryId: 'housing', amount: 900 }], [env('need', 400), env('want', 300)]);
+    expect(r).toMatchObject({ ruleId: '55-10-5-15-15', includeFixed: true });
+  });
+
+  it('besoins > 50 % → 55/10/5/15/15', () => {
+    const r = recommendBudgetRule(2000, [{ categoryId: 'housing', amount: 800 }], [env('need', 400), env('want', 500)]);
+    expect(r.ruleId).toBe('55-10-5-15-15');
+  });
+
+  it('charges fixes ≥ 45 % → calcul sans les charges fixes', () => {
+    const r = recommendBudgetRule(1600, [{ categoryId: 'housing', amount: 800 }], [env('need', 200), env('want', 300)]);
+    expect(r.includeFixed).toBe(false);
+  });
+
+  it('salaire nul → valeurs par défaut', () => {
+    expect(recommendBudgetRule(0, [], [])).toEqual({ ruleId: '50-30-20', includeFixed: true, reasons: [] });
   });
 });

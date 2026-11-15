@@ -256,3 +256,41 @@ export function budgetRuleBreakdown(ruleId, salary, charges, envelopes, { includ
   });
   return { rule, base, includeFixed, rows };
 }
+
+// Règle conseillée à partir du profil (onboarding).
+// - Charges fixes ≥ 45 % du salaire : calcul sans les charges fixes, sinon l'essentiel paraît toujours dépassé.
+// - Besoins > 50 % de la base, ou envies déjà ≤ 20 % : 55/10/5/15/15 (plus de place pour l'essentiel, plus d'épargne).
+// - Sinon 50/30/20, qui laisse plus de marge pour les envies.
+export function recommendBudgetRule(salary, charges, envelopes) {
+  const s = Number(salary) || 0;
+  if (s <= 0) return { ruleId: '50-30-20', includeFixed: true, reasons: [] };
+  const fixed = totalFixedExSavings(charges);
+  const programmed = totalProgrammedSavings(charges);
+  const needs = totalVariableEnvelopes(envelopes.filter(e => e.type === 'need'));
+  const wants = totalVariableEnvelopes(envelopes.filter(e => e.type === 'want'));
+  const pct = v => Math.round(v * 100);
+  const reasons = [];
+
+  const fixedShare = fixed / s;
+  const includeFixed = fixedShare < 0.45;
+  reasons.push(includeFixed
+    ? `Tes charges fixes font ${pct(fixedShare)} % du salaire : on peut les compter dans l'essentiel.`
+    : `Tes charges fixes font ${pct(fixedShare)} % du salaire : on calcule sur ce qui reste après elles.`);
+
+  const base = includeFixed ? s : s - fixed - programmed;
+  if (base <= 0) return { ruleId: '50-30-20', includeFixed: false, reasons };
+  const needsShare = (needs + (includeFixed ? fixed : 0)) / base;
+  const wantsShare = wants / base;
+
+  let ruleId = '50-30-20';
+  if (needsShare > 0.5) {
+    ruleId = '55-10-5-15-15';
+    reasons.push(`Tes besoins pèsent ${pct(needsShare)} % : la 55/10/5/15/15 leur laisse plus de place.`);
+  } else if (wantsShare <= 0.2) {
+    ruleId = '55-10-5-15-15';
+    reasons.push(`Tes envies ne pèsent que ${pct(wantsShare)} % : tu peux viser 30 % d'épargne avec la 55/10/5/15/15.`);
+  } else {
+    reasons.push(`Tes envies pèsent ${pct(wantsShare)} % : la 50/30/20 te laisse 30 % pour te faire plaisir.`);
+  }
+  return { ruleId, includeFixed, reasons };
+}
