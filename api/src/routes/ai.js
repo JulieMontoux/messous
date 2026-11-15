@@ -128,6 +128,101 @@ router.post('/suggestions', async (req, res) => {
   }
 });
 
+// POST /budget-method — avis de l'IA sur la méthode de budget la plus adaptée à l'historique.
+// Le client envoie la comparaison des méthodes calculée sur les dépenses réelles
+// (budgetMethodComparison) : le modèle interprète, il ne calcule pas.
+const RULE_IDS = ['50-30-20', '55-10-5-15-15', '80-20', '70-20-10', 'sixty', 'six-jars', 'zero-based', 'kakeibo'];
+
+router.post('/budget-method', async (req, res) => {
+  try {
+    const { comparison, currentRuleId, includeFixed } = req.body || {};
+    if (!comparison || !Array.isArray(comparison.rules) || !Array.isArray(comparison.months) || !comparison.months.length) {
+      return res.status(400).json({ error: 'Pas assez d\'historique : il faut au moins un mois complet de dépenses.' });
+    }
+    const rules = comparison.rules.filter(r => RULE_IDS.includes(r?.id)).slice(0, RULE_IDS.length);
+    const best = RULE_IDS.includes(comparison.best) ? comparison.best : '50-30-20';
+
+    const { rows: [profile] } = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [req.user.userId]);
+    if (!profile) return res.status(400).json({ error: 'Profil introuvable' });
+    const { rows: charges } = await pool.query('SELECT name, category_id, amount FROM fixed_charges WHERE user_id = $1', [req.user.userId]);
+
+    const prompt = buildMethodPrompt(profile, charges, comparison, rules, { currentRuleId, includeFixed, best });
+    const ollamaUrl = process.env.OLLAMA_URL || 'http://ollama:11434';
+    const model = process.env.OLLAMA_MODEL || 'llama3.1:8b';
+    const ollamaRes = await fetch(`${ollamaUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, prompt, stream: false, format: 'json', options: { temperature: 0.3, num_predict: 500 } }),
+      signal: AbortSignal.timeout(300_000),
+    });
+    if (!ollamaRes.ok) throw new Error(`Ollama ${ollamaRes.status}`);
+    const data = await ollamaRes.json();
+
+    let answer = {};
+    try { answer = JSON.parse(data.response || '{}'); } catch { /* réponse non JSON : repli plus bas */ }
+    const valid = RULE_IDS.includes(answer.ruleId) && rules.some(r => r.id === answer.ruleId);
+    const reasons = (Array.isArray(answer.reasons) ? answer.reasons : [])
+      .filter(r => typeof r === 'string' && r.trim())
+      .slice(0, 4)
+      .map(r => r.trim().slice(0, 300));
+    res.json({
+      ruleId: valid ? answer.ruleId : best,
+      includeFixed: typeof answer.includeFixed === 'boolean' ? answer.includeFixed : !!includeFixed,
+      reasons: valid && reasons.length ? reasons : [`D'après tes dépenses réelles, c'est la méthode qui colle le mieux à ton budget.`],
+      tip: valid && typeof answer.tip === 'string' ? answer.tip.trim().slice(0, 300) : '',
+      fallback: !valid,
+      months: comparison.months,
+    });
+  } catch (err) {
+    const isTimeout = err.name === 'TimeoutError' || err.name === 'AbortError';
+    res.status(isTimeout ? 504 : 503).json({ error: err.message });
+  }
+});
+
+function buildMethodPrompt(profile, charges, comparison, rules, { currentRuleId, includeFixed, best }) {
+  const n = v => Math.round(Number(v) || 0);
+  const salary = n(profile.net_salary);
+  const loans = charges.filter(c => c.category_id === 'loan').reduce((s, c) => s + Number(c.amount), 0);
+  const fixed = charges.filter(c => c.category_id !== 'savings').reduce((s, c) => s + Number(c.amount), 0);
+
+  const monthLines = (comparison.perMonth || []).slice(0, 6)
+    .map(m => `  - ${String(m.month).slice(0, 7)} : besoins ${n(m.needs)}€, envies ${n(m.wants)}€, épargne versée ${n(m.savings)}€`)
+    .join('\n');
+
+  const ruleLines = rules.map(r => {
+    const rows = (Array.isArray(r.rows) ? r.rows : []).slice(0, 8)
+      .map(x => `${String(x.label).slice(0, 40)} ${n(x.actual)}€${x.ideal != null ? ` / objectif ${n(x.ideal)}€` : ''}`)
+      .join(' ; ');
+    const fit = r.score != null ? `écart moyen ${Number(r.score)} %` : r.toAssign != null ? `reste à affecter ${n(r.toAssign)}€` : 'pas d\'objectifs chiffrés';
+    return `- ${r.id} (${String(r.label).slice(0, 30)}) — ${fit}\n    ${rows}`;
+  }).join('\n');
+
+  return `Tu es un conseiller budget français, bienveillant et concret. \
+À partir des dépenses RÉELLES ci-dessous, choisis la méthode de budget la plus adaptée parmi la liste. \
+L'écart moyen indique à quel point les dépenses actuelles collent déjà à la méthode (plus bas = plus proche). \
+Ne choisis pas seulement le plus petit écart : tiens compte de la régularité des dépenses d'un mois à l'autre, \
+des crédits, du niveau d'épargne et de ce qui aiderait la personne à progresser. \
+Base zéro convient aux personnes qui veulent tout contrôler ; Kakeibo à celles qui veulent prendre conscience de leurs dépenses. \
+N'invente aucun chiffre : utilise uniquement ceux fournis.
+
+Réponds UNIQUEMENT en JSON, sous cette forme :
+{"ruleId": "<un identifiant de la liste>", "includeFixed": true ou false, "reasons": ["2 ou 3 phrases courtes avec les chiffres"], "tip": "un conseil concret pour démarrer"}
+
+PROFIL :
+- Salaire net : ${salary}€/mois
+- Foyer : ${profile.household_adults ?? 1} adulte(s), ${profile.household_children ?? 0} enfant(s)
+- Charges fixes : ${n(fixed)}€ (${salary > 0 ? Math.round((fixed / salary) * 100) : 0} % du salaire), dont crédits ${n(loans)}€
+- Méthode actuelle : ${RULE_IDS.includes(currentRuleId) ? currentRuleId : '50-30-20'}, ${includeFixed ? 'avec' : 'sans'} les charges fixes
+
+DÉPENSES RÉELLES PAR MOIS (${comparison.months.length} mois complet(s)) :
+${monthLines || '  (non détaillé)'}
+
+MÉTHODES COMPARÉES AUX DÉPENSES RÉELLES MOYENNES (calcul ${includeFixed ? 'avec' : 'sans'} les charges fixes) :
+${ruleLines}
+
+Méthode la plus proche selon les chiffres : ${best}.`;
+}
+
 function buildPrompt(profile, charges, envelopes, spentByEnv, savingsHistory, trendsRows, summary) {
   const { salary, totalFixed, totalEnv, totalSaving, remainder } = summary;
   const savingsRate = salary > 0 ? Math.round((totalSaving / salary) * 100) : 0;

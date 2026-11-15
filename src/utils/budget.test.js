@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { budgetRuleBreakdown, recommendBudgetRule, BUDGET_RULES } from './budget';
+import {
+  budgetRuleBreakdown, recommendBudgetRule, BUDGET_RULES, historyAverages, ruleFitScore, budgetMethodComparison,
+} from './budget';
 
 const charges = [
   { categoryId: 'housing', amount: 700 },
@@ -166,5 +168,54 @@ describe('budgetRuleBreakdown : autres méthodes', () => {
   it('crédits ≥ 10 % → 70/20/10 conseillée', () => {
     expect(recommendBudgetRule(1900, ch, envs).ruleId).toBe('70-20-10'); // crédits 200 / 1900 ≈ 11 %
     expect(recommendBudgetRule(2500, ch, envs).ruleId).not.toBe('70-20-10'); // 8 %
+  });
+});
+
+describe('historique et comparaison des méthodes', () => {
+  const now = new Date(2026, 10, 15); // novembre 2026 → mois complets : oct., sept., août
+  const envs = [
+    { id: 'g', type: 'need', categoryId: 'groceries', budgetMonthly: 999 },
+    { id: 'r', type: 'want', categoryId: 'restaurant', budgetMonthly: 999 },
+    { id: 'l', type: 'saving', categoryId: 'livret', budgetMonthly: 999 },
+  ];
+  const tx = [
+    { envelopeId: 'g', date: '2026-10-03', amount: 300 },
+    { envelopeId: 'g', date: '2026-09-03', amount: 500 },
+    { envelopeId: 'r', date: '2026-10-10', amount: 200 },
+    { envelopeId: 'l', date: '2026-09-28', amount: 100 },
+    { envelopeId: 'g', date: '2026-11-02', amount: 1000 }, // mois en cours : ignoré
+    { envelopeId: 'x', date: '2026-10-02', amount: 1000 }, // enveloppe supprimée : ignorée
+  ];
+
+  it('moyenne sur les mois complets ayant des dépenses', () => {
+    const h = historyAverages(tx, envs, { now });
+    expect(h.months).toEqual(['2026-10', '2026-09']);
+    expect(h.envelopes.map(e => e.budgetMonthly)).toEqual([400, 100, 50]);
+    expect(h.perMonth[0]).toEqual({ month: '2026-10', needs: 300, wants: 200, savings: 0 });
+  });
+
+  it('pas d\'historique → null', () => {
+    expect(historyAverages([], envs, { now })).toBeNull();
+    expect(budgetMethodComparison({ salary: 2000, charges: [], envelopes: envs, transactions: [], now })).toBeNull();
+  });
+
+  it('score : 0 quand le réel colle à la règle, null sans objectifs', () => {
+    const fit = [
+      { id: 'n', type: 'need', categoryId: 'groceries', budgetMonthly: 1000 },
+      { id: 'w', type: 'want', categoryId: 'restaurant', budgetMonthly: 600 },
+    ];
+    // reste du mois 400 = 20 % → épargne pile à l'objectif
+    expect(ruleFitScore(budgetRuleBreakdown('50-30-20', 2000, [], fit))).toBe(0);
+    expect(ruleFitScore(budgetRuleBreakdown('80-20', 2000, [], fit))).toBe(0);
+    expect(ruleFitScore(budgetRuleBreakdown('six-jars', 2000, [], fit))).toBeGreaterThan(0);
+    expect(ruleFitScore(budgetRuleBreakdown('kakeibo', 2000, [], fit))).toBeNull();
+  });
+
+  it('comparaison : toutes les méthodes, meilleure = score le plus bas', () => {
+    const c = budgetMethodComparison({ salary: 2000, charges: [{ categoryId: 'housing', amount: 600 }], envelopes: envs, transactions: tx, now });
+    expect(c.rules).toHaveLength(Object.keys(BUDGET_RULES).length);
+    const scored = c.rules.filter(r => r.score != null);
+    expect(c.best).toBe(scored.reduce((a, b) => (b.score < a.score ? b : a)).id);
+    expect(c.rules.find(r => r.id === 'zero-based').toAssign).toBe(2000 - 600 - 550);
   });
 });

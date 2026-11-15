@@ -375,3 +375,70 @@ export function recommendBudgetRule(salary, charges, envelopes) {
   }
   return { ruleId, includeFixed, reasons };
 }
+
+// Dépenses réelles moyennes par enveloppe sur les derniers mois complets ayant des dépenses.
+// Retourne les enveloppes avec budgetMonthly = moyenne réelle, pour réutiliser budgetRuleBreakdown.
+export function historyAverages(transactions, envelopes, { months = 3, now = new Date() } = {}) {
+  const keys = Array.from({ length: months }, (_, i) => monthKey(new Date(now.getFullYear(), now.getMonth() - 1 - i, 1)));
+  const envIds = new Set(envelopes.map(e => e.id));
+  const tx = transactions.filter(t => envIds.has(t.envelopeId));
+  const used = keys.filter(k => tx.some(t => t.date.startsWith(k)));
+  if (!used.length) return null;
+
+  const byEnvMonth = {};
+  for (const t of tx) {
+    const k = t.date.slice(0, 7);
+    if (!used.includes(k)) continue;
+    byEnvMonth[t.envelopeId] ??= {};
+    byEnvMonth[t.envelopeId][k] = (byEnvMonth[t.envelopeId][k] || 0) + (Number(t.amount) || 0);
+  }
+  const avg = id => Math.round(Object.values(byEnvMonth[id] || {}).reduce((s, v) => s + v, 0) / used.length);
+  const typeTotal = (type, k) => envelopes
+    .filter(e => e.type === type)
+    .reduce((s, e) => s + (byEnvMonth[e.id]?.[k] || 0), 0);
+
+  return {
+    months: used,
+    envelopes: envelopes.map(e => ({ ...e, budgetMonthly: avg(e.id) })),
+    perMonth: used.map(k => ({
+      month: k,
+      needs: Math.round(typeTotal('need', k)),
+      wants: Math.round(typeTotal('want', k)),
+      savings: Math.round(typeTotal('saving', k)),
+    })),
+  };
+}
+
+// Écart moyen (en % de la base) entre les montants réels et les objectifs d'une règle.
+// Dépenses : on compte l'écart dans les deux sens ; épargne : seulement ce qui manque.
+// null pour les méthodes sans objectifs en % (base zéro, Kakeibo).
+export function ruleFitScore(breakdown) {
+  if (!breakdown || breakdown.rule.zeroBased || breakdown.rule.kakeibo) return null;
+  const rows = breakdown.rows.filter(r => r.ideal != null);
+  const gaps = rows.map(r => (r.saving ? Math.max(0, -r.diff) : Math.abs(r.diff)) / breakdown.base);
+  return Math.round((gaps.reduce((s, g) => s + g, 0) / rows.length) * 1000) / 10;
+}
+
+// Compare toutes les méthodes aux dépenses réelles (données envoyées à l'IA).
+export function budgetMethodComparison({ salary, charges, envelopes, transactions, includeFixed = true, savingsGoal, now }) {
+  const history = historyAverages(transactions, envelopes, { now });
+  if (!history) return null;
+  const rules = Object.entries(BUDGET_RULES).map(([id, rule]) => {
+    const b = budgetRuleBreakdown(id, salary, charges, history.envelopes, { includeFixed, savingsGoal });
+    return {
+      id,
+      label: rule.label,
+      description: rule.description,
+      score: ruleFitScore(b),
+      toAssign: b?.toAssign != null ? Math.round(b.toAssign) : null,
+      rows: (b?.rows || []).map(r => ({
+        label: r.label,
+        pct: r.pct,
+        actual: Math.round(r.actual),
+        ideal: r.ideal != null ? Math.round(r.ideal) : null,
+      })),
+    };
+  });
+  const scored = rules.filter(r => r.score != null).sort((a, b) => a.score - b.score);
+  return { months: history.months, perMonth: history.perMonth, rules, best: scored[0]?.id || '50-30-20' };
+}

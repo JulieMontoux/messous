@@ -10,6 +10,7 @@ import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
 import TobaccoFields from '../components/TobaccoFields';
 import BudgetRulePicker from '../components/BudgetRulePicker';
+import AiBudgetAdvice from '../components/AiBudgetAdvice';
 
 function Counter({ label, value, onChange }) {
   return (
@@ -280,6 +281,7 @@ export default function Settings() {
           onChangeSavingsGoal={v => dispatch({ type: 'UPDATE_PROFILE', payload: { kakeiboSavingsGoal: v } })}
           defaultGoal={budgetRuleBase(profile.netSalary, state.fixedCharges, profile.budgetIncludeFixed ?? true) * DEFAULT_KAKEIBO_GOAL_PCT}
         />
+        <AiBudgetAdvice />
       </div>
       </div>
 
